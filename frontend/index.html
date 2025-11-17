@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlaudAI Uploader - Surgical Command Center</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .form-section {
+            margin-bottom: 30px;
+        }
+        
+        .form-section h2 {
+            color: #2a5298;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+        }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        input[type="date"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+        
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .result-box {
+            margin-top: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+        
+        .result-box.show {
+            display: block;
+        }
+        
+        .result-box.success {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        
+        .result-box.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+        
+        .result-content {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .tag {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 PlaudAI Uploader</h1>
+            <p>Voice Transcript Import for Surgical Command Center</p>
+        </div>
+        
+        <div class="content">
+            <form id="uploadForm">
+                <div class="form-section">
+                    <h2>👤 Patient Information</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="firstName">First Name *</label>
+                            <input type="text" id="firstName" name="first_name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="lastName">Last Name *</label>
+                            <input type="text" id="lastName" name="last_name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="dob">Date of Birth *</label>
+                            <input type="date" id="dob" name="dob" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="athenaMrn">Athena MRN *</label>
+                            <input type="text" id="athenaMrn" name="athena_mrn" required placeholder="e.g., MRN123456">
+                        </div>
+                        <div class="form-group">
+                            <label for="birthSex">Birth Sex</label>
+                            <select id="birthSex" name="birth_sex">
+                                <option value="">Select...</option>
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="race">Race</label>
+                            <input type="text" id="race" name="race" placeholder="Optional">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h2>📝 Transcript Details</h2>
+                    <div class="form-group full-width">
+                        <label for="transcriptTitle">Title</label>
+                        <input type="text" id="transcriptTitle" name="transcript_title" value="PlaudAI Voice Note" placeholder="Optional title">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="transcriptText">PlaudAI Summary *</label>
+                        <textarea id="transcriptText" name="transcript_text" rows="16" required placeholder="Paste your PlaudAI transcript here...
+
+Example format:
+## Chief Complaint
+Patient presents with...
+
+## History
+...
+
+## Assessment
+..."></textarea>
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">📤 Upload Transcript</button>
+                    <button type="button" class="btn-secondary" onclick="clearForm()">🗑️ Clear</button>
+                </div>
+            </form>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #666;">Processing transcript...</p>
+            </div>
+            
+            <div class="result-box" id="resultBox">
+                <h3 id="resultTitle">Result</h3>
+                <div class="result-content" id="resultContent"></div>
+                <div id="tagList" class="tag-list"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Show loading
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('resultBox').classList.remove('show');
+            
+            // Gather form data
+            const formData = new FormData(e.target);
+            const data = {
+                first_name: formData.get('first_name'),
+                last_name: formData.get('last_name'),
+                dob: formData.get('dob'),
+                athena_mrn: formData.get('athena_mrn'),
+                birth_sex: formData.get('birth_sex') || null,
+                race: formData.get('race') || null,
+                transcript_title: formData.get('transcript_title') || 'PlaudAI Voice Note',
+                transcript_text: formData.get('transcript_text')
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                // Hide loading
+                document.getElementById('loading').classList.remove('show');
+                
+                // Show result
+                const resultBox = document.getElementById('resultBox');
+                const resultContent = document.getElementById('resultContent');
+                const resultTitle = document.getElementById('resultTitle');
+                const tagList = document.getElementById('tagList');
+                
+                resultBox.classList.add('show');
+                
+                if (response.ok) {
+                    resultBox.classList.add('success');
+                    resultBox.classList.remove('error');
+                    resultTitle.textContent = '✅ Upload Successful';
+                    
+                    let message = `Patient ID: ${result.patient_id}\n`;
+                    message += `Transcript ID: ${result.transcript_id}\n`;
+                    message += `Confidence Score: ${(result.confidence_score * 100).toFixed(1)}%\n`;
+                    message += `Tags Found: ${result.tags.length}\n`;
+                    
+                    if (result.warnings && result.warnings.length > 0) {
+                        message += `\n⚠️ Warnings:\n${result.warnings.join('\n')}`;
+                    }
+                    
+                    resultContent.textContent = message;
+                    
+                    // Display tags
+                    tagList.innerHTML = result.tags.map(tag => 
+                        `<span class="tag">${tag}</span>`
+                    ).join('');
+                    
+                } else {
+                    resultBox.classList.add('error');
+                    resultBox.classList.remove('success');
+                    resultTitle.textContent = '❌ Upload Failed';
+                    resultContent.textContent = result.detail || 'Unknown error occurred';
+                    tagList.innerHTML = '';
+                }
+                
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                
+                const resultBox = document.getElementById('resultBox');
+                resultBox.classList.add('show', 'error');
+                resultBox.classList.remove('success');
+                document.getElementById('resultTitle').textContent = '❌ Connection Error';
+                document.getElementById('resultContent').textContent = 
+                    `Cannot connect to server at ${API_BASE}\n\nError: ${error.message}\n\nPlease ensure the backend is running.`;
+                document.getElementById('tagList').innerHTML = '';
+            }
+        });
+        
+        function clearForm() {
+            document.getElementById('uploadForm').reset();
+            document.getElementById('resultBox').classList.remove('show');
+        }
+        
+        // Auto-resize textarea
+        document.getElementById('transcriptText').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = this.scrollHeight + 'px';
+        });
+    </script>
+</body>
+</html>
