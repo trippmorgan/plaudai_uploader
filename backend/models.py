@@ -32,6 +32,7 @@ class Patient(Base):
     # Relationships
     transcripts = relationship("VoiceTranscript", back_populates="patient")
     procedures = relationship("PVIProcedure", back_populates="patient")
+    synopses = relationship("ClinicalSynopsis", back_populates="patient")
 
 class VoiceTranscript(Base):
     """Voice transcript from PlaudAI with parsing results"""

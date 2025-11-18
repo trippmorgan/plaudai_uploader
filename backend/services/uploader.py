@@ -201,7 +201,7 @@ def batch_upload_transcripts(
             result = upload_transcript(
                 db,
                 patient_data=item.get("patient_data", {}),
-                summary_text=item.get("transcript_text", ""),
+                raw_transcript=item.get("transcript_text", ""),
                 title=item.get("title", f"PlaudAI Note {idx + 1}"),
                 auto_process=True
             )
