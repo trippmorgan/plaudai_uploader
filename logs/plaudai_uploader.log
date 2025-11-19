@@ -1,0 +1,139 @@
+2025-11-19 14:32:58 - root - INFO - [logging_config.py:65] - ✅ Logging initialized. Writing to: /home/server1/plaudai_uploader/logs/plaudai_uploader.log
+2025-11-19 14:32:58 - backend.main - INFO - [main.py:104] - 🚀 Starting PlaudAI Uploader API...
+2025-11-19 14:32:58 - backend.db - INFO - [db.py:85] - Database connection successful
+2025-11-19 14:32:58 - backend.db - INFO - [db.py:73] - Database tables created successfully
+2025-11-19 14:32:58 - backend.main - INFO - [main.py:114] - ✅ Database initialized successfully
+2025-11-19 14:32:58 - backend.main - INFO - [main.py:119] - ✅ PlaudAI Uploader API ready to accept connections
+2025-11-19 14:33:06 - backend.main - INFO - [main.py:69] - ➡️ [003cd51f] GET /
+2025-11-19 14:33:06 - backend.main - INFO - [main.py:76] - ⬅️ [003cd51f] 200 - 0.83ms
+2025-11-19 14:57:23 - backend.main - INFO - [main.py:69] - ➡️ [2d531722] POST /upload
+2025-11-19 14:57:23 - backend.main - INFO - [main.py:168] - Processing upload for MRN: MRN123456789
+2025-11-19 14:57:23 - backend.services.uploader - INFO - [uploader.py:88] - 📥 Starting transcript upload for MRN: MRN123456789 | Title: PlaudAI Voice Note test
+2025-11-19 14:57:23 - backend.services.uploader - ERROR - [uploader.py:164] - ❌ Upload failed in upload_transcript: Mapper 'Mapper[Patient(patients)]' has no property 'synopses'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.
+Traceback (most recent call last):
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2522, in get_property
+    return self._props[key]
+           ~~~~~~~~~~~^^^^^
+KeyError: 'synopses'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/server1/plaudai_uploader/backend/services/uploader.py", line 91, in upload_transcript
+    patient = get_or_create_patient(db, patient_data)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/plaudai_uploader/backend/services/uploader.py", line 31, in get_or_create_patient
+    patient = db.query(Patient).filter_by(athena_mrn=athena_mrn).first()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2941, in query
+    return self._query_cls(entities, self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 276, in __init__
+    self._set_entities(entities)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 288, in _set_entities
+    self._raw_columns = [
+                        ^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 289, in <listcomp>
+    coercions.expect(
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/sql/coercions.py", line 388, in expect
+    insp._post_inspect
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 1338, in __get__
+    obj.__dict__[self.__name__] = result = self.fget(obj)
+                                           ^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2724, in _post_inspect
+    self._check_configure()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2401, in _check_configure
+    _configure_registries({self.registry}, cascade=True)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4218, in _configure_registries
+    _do_configure_registries(registries, cascade)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4259, in _do_configure_registries
+    mapper._post_configure_properties()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2418, in _post_configure_properties
+    prop.init()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/interfaces.py", line 595, in init
+    self.do_init()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 1660, in do_init
+    self._generate_backref()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 2144, in _generate_backref
+    self._add_reverse_property(self.back_populates)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 1591, in _add_reverse_property
+    other = self.mapper.get_property(key, _configure_mappers=False)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2524, in get_property
+    raise sa_exc.InvalidRequestError(
+sqlalchemy.exc.InvalidRequestError: Mapper 'Mapper[Patient(patients)]' has no property 'synopses'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.
+2025-11-19 14:57:23 - backend.main - ERROR - [main.py:214] - Upload failed: Mapper 'Mapper[Patient(patients)]' has no property 'synopses'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.
+Traceback (most recent call last):
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2522, in get_property
+    return self._props[key]
+           ~~~~~~~~~~~^^^^^
+KeyError: 'synopses'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/server1/plaudai_uploader/backend/main.py", line 180, in upload_note
+    result = upload_transcript(
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/server1/plaudai_uploader/backend/services/uploader.py", line 91, in upload_transcript
+    patient = get_or_create_patient(db, patient_data)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/plaudai_uploader/backend/services/uploader.py", line 31, in get_or_create_patient
+    patient = db.query(Patient).filter_by(athena_mrn=athena_mrn).first()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2941, in query
+    return self._query_cls(entities, self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 276, in __init__
+    self._set_entities(entities)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 288, in _set_entities
+    self._raw_columns = [
+                        ^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 289, in <listcomp>
+    coercions.expect(
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/sql/coercions.py", line 388, in expect
+    insp._post_inspect
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 1338, in __get__
+    obj.__dict__[self.__name__] = result = self.fget(obj)
+                                           ^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2724, in _post_inspect
+    self._check_configure()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2401, in _check_configure
+    _configure_registries({self.registry}, cascade=True)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4218, in _configure_registries
+    _do_configure_registries(registries, cascade)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4259, in _do_configure_registries
+    mapper._post_configure_properties()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2418, in _post_configure_properties
+    prop.init()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/interfaces.py", line 595, in init
+    self.do_init()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 1660, in do_init
+    self._generate_backref()
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 2144, in _generate_backref
+    self._add_reverse_property(self.back_populates)
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/relationships.py", line 1591, in _add_reverse_property
+    other = self.mapper.get_property(key, _configure_mappers=False)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/server1/miniconda3/envs/plaudai/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2524, in get_property
+    raise sa_exc.InvalidRequestError(
+sqlalchemy.exc.InvalidRequestError: Mapper 'Mapper[Patient(patients)]' has no property 'synopses'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.
+2025-11-19 14:57:23 - backend.db - ERROR - [db.py:42] - Database session error: 500: Mapper 'Mapper[Patient(patients)]' has no property 'synopses'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.
+2025-11-19 14:57:23 - backend.main - INFO - [main.py:76] - ⬅️ [2d531722] 500 - 44.72ms
+2025-11-19 15:25:07 - root - INFO - [logging_config.py:65] - ✅ Logging initialized. Writing to: /home/server1/plaudai_uploader/logs/plaudai_uploader.log
+2025-11-19 15:25:07 - backend.main - INFO - [main.py:104] - 🚀 Starting PlaudAI Uploader API...
+2025-11-19 15:25:07 - backend.db - INFO - [db.py:85] - Database connection successful
+2025-11-19 15:25:07 - backend.db - INFO - [db.py:73] - Database tables created successfully
+2025-11-19 15:25:07 - backend.main - INFO - [main.py:114] - ✅ Database initialized successfully
+2025-11-19 15:25:07 - backend.main - INFO - [main.py:119] - ✅ PlaudAI Uploader API ready to accept connections
+2025-11-19 15:26:54 - backend.main - INFO - [main.py:69] - ➡️ [8accc2b8] POST /upload
+2025-11-19 15:26:54 - backend.main - INFO - [main.py:168] - Processing upload for MRN: MRN123456789
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:88] - 📥 Starting transcript upload for MRN: MRN123456789 | Title: PlaudAI Voice Note test
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:53] - 🆕 Creating new patient record for MRN: MRN123456789
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:58] - ✅ Patient created successfully. ID: 5
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:106] - ⚙️ Running parser and tag extraction...
+2025-11-19 15:26:54 - backend.services.parser - INFO - [parser.py:259] - Processed transcript: 5 sections, 3 tags, 0 PVI fields, confidence=0.30
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:108] - 🏷️ Parsing complete. Confidence: 0.30 | Tags found: 3 | PVI Fields: 0
+2025-11-19 15:26:54 - backend.services.uploader - INFO - [uploader.py:133] - 💾 Transcript saved successfully. ID: 2
+2025-11-19 15:26:54 - backend.main - INFO - [main.py:201] - Upload successful for Patient ID: 5, Transcript ID: 2
+2025-11-19 15:26:54 - backend.main - INFO - [main.py:76] - ⬅️ [8accc2b8] 200 - 70.90ms

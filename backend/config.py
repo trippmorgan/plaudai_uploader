@@ -23,7 +23,7 @@ DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NA
 
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+API_PORT = int(os.getenv("API_PORT", "8001"))
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
 # Gemini AI Configuration (for enhanced tagging)

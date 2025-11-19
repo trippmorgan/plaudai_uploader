@@ -26,12 +26,14 @@ class Patient(Base):
     center_site_location = Column(String(100))
     insurance_type = Column(String(50))
     
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
-    transcripts = relationship("VoiceTranscript", back_populates="patient")
-    procedures = relationship("PVIProcedure", back_populates="patient")
+    transcripts = relationship("VoiceTranscript", back_populates="patient", cascade="all, delete-orphan")
+    procedures = relationship("PVIProcedure", back_populates="patient", cascade="all, delete-orphan")
+    # ✅ This fixes your "Mapper has no property synopses" error
+    synopses = relationship("ClinicalSynopsis", back_populates="patient", cascade="all, delete-orphan")
 
 class VoiceTranscript(Base):
     """Voice transcript from PlaudAI with parsing results"""
@@ -48,7 +50,7 @@ class VoiceTranscript(Base):
     recording_date = Column(DateTime)  # When recording was made
     
     # Transcript metadata
-    visit_date = Column(DateTime, server_default=func.now())
+    visit_date = Column(DateTime(timezone=True), server_default=func.now())
     visit_type = Column(String(100))  # Office visit, procedure, follow-up, etc.
     transcript_title = Column(String(200))
     
@@ -60,8 +62,8 @@ class VoiceTranscript(Base):
     is_processed = Column(Boolean, default=False)
     processing_notes = Column(Text)
     
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     patient = relationship("Patient", back_populates="transcripts")
@@ -86,7 +88,7 @@ class ClinicalSynopsis(Base):
     
     # AI metadata
     ai_model = Column(String(50))  # gemini-2.0-flash, local-llama, etc.
-    generation_timestamp = Column(DateTime, server_default=func.now())
+    generation_timestamp = Column(DateTime(timezone=True), server_default=func.now())
     tokens_used = Column(Integer)
     
     # Clinical sections (JSON structure)
@@ -106,8 +108,8 @@ class ClinicalSynopsis(Base):
     follow_up_date = Column(Date)
     pending_tests = Column(JSON)
     
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     patient = relationship("Patient", back_populates="synopses")
@@ -222,8 +224,8 @@ class PVIProcedure(Base):
     ltfu_reintervention_type = Column(Text)
     ltfu_amputation_since_discharge = Column(Boolean)
     
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     patient = relationship("Patient", back_populates="procedures")

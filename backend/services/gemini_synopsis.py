@@ -7,18 +7,21 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 
 from ..models import Patient, VoiceTranscript, PVIProcedure, ClinicalSynopsis
 from ..config import GOOGLE_API_KEY, GEMINI_MODEL
 
+# Initialize logger
 logger = logging.getLogger(__name__)
 
 # Configure Gemini AI
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
+    logger.info(f"🤖 Gemini AI configured with model: {GEMINI_MODEL}")
 else:
-    logger.warning("GOOGLE_API_KEY not configured - AI synopsis generation disabled")
+    logger.warning("⚠️ GOOGLE_API_KEY not configured - AI synopsis generation disabled")
 
 # ==================== Data Aggregation ====================
 
@@ -28,18 +31,13 @@ def gather_patient_data(
     days_back: int = 365
 ) -> Dict[str, any]:
     """
-    Gather all available patient data from database
-    
-    Args:
-        db: Database session
-        patient_id: Patient ID
-        days_back: How many days of history to include
-    
-    Returns:
-        Dictionary with all patient data organized by category
+    Gather all available patient data from database with logging
     """
+    logger.debug(f"🔍 Gathering clinical data for Patient ID: {patient_id} (Last {days_back} days)")
+    
     patient = db.query(Patient).filter_by(id=patient_id).first()
     if not patient:
+        logger.error(f"❌ Patient {patient_id} not found during data gathering")
         raise ValueError(f"Patient {patient_id} not found")
     
     cutoff_date = datetime.now() - timedelta(days=days_back)
@@ -55,6 +53,8 @@ def gather_patient_data(
         PVIProcedure.patient_id == patient_id,
         PVIProcedure.procedure_date >= cutoff_date.date()
     ).order_by(PVIProcedure.procedure_date.desc()).all()
+    
+    logger.info(f"📊 Data Found: {len(transcripts)} transcripts, {len(procedures)} procedures")
     
     # Organize data
     patient_data = {
@@ -112,14 +112,9 @@ def calculate_age(dob):
 def build_synopsis_prompt(patient_data: Dict, synopsis_type: str = "comprehensive") -> str:
     """
     Build AI prompt based on patient data and desired synopsis type
-    
-    Synopsis types:
-        - comprehensive: Full clinical summary
-        - visit_summary: Summary of latest visit
-        - problem_list: Current active problems
-        - medication_review: Current medications and allergies
-        - procedure_summary: Recent procedures and outcomes
     """
+    logger.debug(f"🏗️ Building prompt for type: {synopsis_type}")
+    
     name = patient_data["demographics"]["name"]
     mrn = patient_data["demographics"]["mrn"]
     age = patient_data["demographics"]["age"]
@@ -137,6 +132,7 @@ DOB: {patient_data["demographics"]["dob"]}
     # Add transcript data
     if patient_data["transcripts"]:
         base_prompt += "RECENT CLINICAL ENCOUNTERS:\n"
+        count = 0
         for i, t in enumerate(patient_data["transcripts"][:5], 1):  # Last 5 transcripts
             base_prompt += f"\n--- Visit {i}: {t['date'].strftime('%Y-%m-%d')} ---\n"
             base_prompt += f"Type: {t['visit_type'] or 'Not specified'}\n"
@@ -144,10 +140,13 @@ DOB: {patient_data["demographics"]["dob"]}
                 base_prompt += f"PlaudAI Note:\n{t['plaud_note']}\n"
             if t['raw_transcript']:
                 base_prompt += f"Raw Transcript:\n{t['raw_transcript'][:500]}...\n"
+            count += 1
+        logger.debug(f"Included {count} encounters in prompt")
     
     # Add procedure data
     if patient_data["procedures"]:
         base_prompt += "\n\nRECENT PROCEDURES:\n"
+        count = 0
         for i, p in enumerate(patient_data["procedures"][:3], 1):  # Last 3 procedures
             base_prompt += f"\n--- Procedure {i}: {p['date']} ---\n"
             base_prompt += f"Surgeon: {p['surgeon']}\n"
@@ -157,6 +156,8 @@ DOB: {patient_data["demographics"]["dob"]}
             base_prompt += f"Success: {'Yes' if p['treatment_success'] else 'No'}\n"
             if p['complications']:
                 base_prompt += f"Complications: {json.dumps(p['complications'])}\n"
+            count += 1
+        logger.debug(f"Included {count} procedures in prompt")
     
     # Add type-specific instructions
     if synopsis_type == "comprehensive":
@@ -183,49 +184,21 @@ Include the following sections:
 
 Format as clear, professional medical documentation.
 """
-    
     elif synopsis_type == "visit_summary":
         base_prompt += """
-
 TASK: Create a concise visit summary from the most recent encounter.
-
-Include:
-1. Date and type of visit
-2. Reason for visit
-3. Key findings
-4. Decisions made
-5. Follow-up plan
-
+Include: Date/type, Reason, Findings, Decisions, Plan.
 Format as brief clinical note (3-5 paragraphs).
 """
-    
     elif synopsis_type == "problem_list":
         base_prompt += """
-
 TASK: Extract and organize current active medical problems.
-
-Create a numbered problem list with:
-- Problem name
-- Severity/stability (acute, chronic, stable, worsening)
-- Current treatment
-- Last assessment date
-
+Create a numbered problem list with: Name, Severity, Treatment, Last Date.
 Prioritize vascular and cardiovascular problems.
 """
-    
     elif synopsis_type == "procedure_summary":
         base_prompt += """
-
 TASK: Summarize recent vascular procedures and outcomes.
-
-For each procedure include:
-- Date and procedure type
-- Indication (Rutherford classification)
-- Vessels treated with laterality
-- Technical success
-- Complications
-- Current status/patency
-
 Format as structured procedure report.
 """
     
@@ -242,18 +215,11 @@ def generate_clinical_synopsis(
 ) -> ClinicalSynopsis:
     """
     Generate AI-powered clinical synopsis from patient data
-    
-    Args:
-        db: Database session
-        patient_id: Patient ID
-        synopsis_type: Type of synopsis to generate
-        days_back: Days of history to include
-        force_regenerate: Regenerate even if recent synopsis exists
-    
-    Returns:
-        ClinicalSynopsis object
     """
+    logger.info(f"🧠 Requesting AI Synopsis: Patient {patient_id} | Type: {synopsis_type}")
+    
     if not GOOGLE_API_KEY:
+        logger.error("❌ API Key missing")
         raise ValueError("GOOGLE_API_KEY not configured - cannot generate synopsis")
     
     # Check if recent synopsis exists
@@ -265,31 +231,43 @@ def generate_clinical_synopsis(
         ).first()
         
         if recent:
-            logger.info(f"Using cached synopsis for patient {patient_id}")
+            logger.info(f"✅ Using valid cached synopsis (ID: {recent.id}) created {recent.created_at}")
             return recent
+        else:
+            logger.info("ℹ️ No recent cache found. Generating new synopsis...")
+    else:
+        logger.info("🔄 Force regeneration requested.")
     
     # Gather patient data
-    logger.info(f"Gathering data for patient {patient_id}")
+    start_time = time.time()
     patient_data = gather_patient_data(db, patient_id, days_back)
+    
+    # Check if there is actually data to summarize
+    if not patient_data["transcripts"] and not patient_data["procedures"]:
+        logger.warning("⚠️ No clinical data found for this patient. AI result may be empty.")
     
     # Build prompt
     prompt = build_synopsis_prompt(patient_data, synopsis_type)
     
     # Generate with Gemini
-    logger.info(f"Generating {synopsis_type} synopsis with Gemini")
+    logger.info(f"🚀 Sending request to Gemini ({len(prompt)} chars)...")
     try:
         model = genai.GenerativeModel(GEMINI_MODEL)
         response = model.generate_content(prompt)
         
         synopsis_text = response.text
-        tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else None
+        tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"✨ AI Generation Complete in {elapsed_time:.2f}s. Tokens used: {tokens_used}")
         
     except Exception as e:
-        logger.error(f"Gemini generation failed: {e}")
+        logger.error(f"❌ Gemini generation failed: {e}", exc_info=True)
         raise
     
     # Parse structured sections from response
     sections = parse_synopsis_sections(synopsis_text)
+    logger.debug(f"📋 Parsed {len(sections)} structured sections from response")
     
     # Create synopsis record
     synopsis = ClinicalSynopsis(
@@ -320,7 +298,7 @@ def generate_clinical_synopsis(
     db.commit()
     db.refresh(synopsis)
     
-    logger.info(f"Synopsis {synopsis.id} generated successfully")
+    logger.info(f"💾 Synopsis saved to database. ID: {synopsis.id}")
     return synopsis
 
 # ==================== Section Parsing ====================
@@ -328,7 +306,6 @@ def generate_clinical_synopsis(
 def parse_synopsis_sections(synopsis_text: str) -> Dict[str, any]:
     """
     Parse structured sections from AI-generated synopsis
-    Extract specific sections for database storage
     """
     sections = {}
     
@@ -400,13 +377,20 @@ def get_all_synopses(
 def get_patient_summary(db: Session, mrn: str) -> Dict:
     """
     Quick patient summary by MRN - for clinical use
-    Returns demographics + latest synopsis
     """
+    logger.info(f"🔎 Clinical Lookup: Summary requested for MRN {mrn}")
+    
     patient = db.query(Patient).filter_by(athena_mrn=mrn).first()
     if not patient:
+        logger.warning(f"❌ Patient lookup failed: MRN {mrn} not found")
         raise ValueError(f"Patient with MRN {mrn} not found")
     
     synopsis = get_latest_synopsis(db, patient.id, "comprehensive")
+    
+    if synopsis:
+        logger.info(f"✅ Found synopsis for MRN {mrn} (Date: {synopsis.created_at.date()})")
+    else:
+        logger.info(f"ℹ️ No synopsis found for MRN {mrn}")
     
     return {
         "patient": {

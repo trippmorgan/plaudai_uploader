@@ -56,6 +56,9 @@ A standalone mini-application that imports PlaudAI voice transcripts, automatica
 mkdir -p /opt/plaudai_uploader
 cd /opt/plaudai_uploader
 ```
+cd ~/plaudai_uploader
+conda activate plaudai
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
 
 ### 2. Install Dependencies
 
@@ -80,8 +83,9 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 ### 5. Access UI
 
-Open browser: `http://localhost:8000/docs` (API docs)
+Open browser: `http://localhost:8001/docs` (API docs)
 Or: Open `frontend/index.html` in browser
+http://100.75.237.36:8001/index.html
 
 ---
 

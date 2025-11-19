@@ -1,16 +1,22 @@
 """
 PlaudAI Uploader - FastAPI Main Application
 """
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from typing import List, Optional
+import time
+import uuid
 import logging
+from typing import List, Optional
 from datetime import datetime
 
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+
+# Imports from local modules
 from .db import Base, engine, get_db, check_connection, init_db
 from .config import API_HOST, API_PORT, DEBUG
+from .logging_config import configure_logging  # <--- NEW IMPORT
 from .models import Patient, VoiceTranscript, PVIProcedure
 from .schemas import (
     PatientCreate, PatientResponse,
@@ -33,23 +39,55 @@ from .services.gemini_synopsis import (
     get_patient_summary
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# ==================== Logging Setup ====================
+# Initialize detailed logging configuration
+configure_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+# ==================== App Initialization ====================
 app = FastAPI(
     title="PlaudAI Uploader",
     description="Voice transcript upload and processing for Surgical Command Center",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# CORS middleware
+# ==================== Middleware ====================
+
+# 1. Logging Middleware (Insert this FIRST)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Middleware to log every request, response time, and status code.
+    Generates a unique Request ID for tracing.
+    """
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+    
+    # Log Request Start
+    logger.info(f"➡️ [{request_id}] {request.method} {request.url.path}")
+    
+    try:
+        response = await call_next(request)
+        
+        # Log Response Success
+        process_time = (time.time() - start_time) * 1000
+        logger.info(
+            f"⬅️ [{request_id}] {response.status_code} - {process_time:.2f}ms"
+        )
+        return response
+        
+    except Exception as e:
+        # Log Unexpected Errors
+        process_time = (time.time() - start_time) * 1000
+        logger.error(
+            f"❌ [{request_id}] FAILED - {process_time:.2f}ms - Error: {str(e)}", 
+            exc_info=True
+        )
+        raise
+
+# 2. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify actual origins
@@ -63,29 +101,29 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
-    logger.info("Starting PlaudAI Uploader API...")
+    logger.info("🚀 Starting PlaudAI Uploader API...")
     
     # Check database connection
     if not check_connection():
-        logger.error("Database connection failed!")
+        logger.critical("❌ Database connection failed! Application cannot start.")
         raise RuntimeError("Cannot connect to database")
     
     # Initialize tables
     try:
         init_db()
-        logger.info("Database initialized successfully")
+        logger.info("✅ Database initialized successfully")
     except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+        logger.critical(f"❌ Database initialization failed: {e}")
         raise
     
-    logger.info("PlaudAI Uploader API ready")
+    logger.info("✅ PlaudAI Uploader API ready to accept connections")
 
 @app.get("/")
 async def root():
     """Health check and API info"""
     return {
         "service": "PlaudAI Uploader",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "database": "connected",
@@ -102,10 +140,12 @@ async def root():
 async def health_check(db: Session = Depends(get_db)):
     """Detailed health check"""
     try:
-        # Test database query
-        db.execute("SELECT 1")
+        # Test database query using text() for SQLAlchemy 2.x compatibility
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
+        logger.error(f"Health check failed: {e}")
         db_status = f"unhealthy: {str(e)}"
     
     return {
@@ -123,14 +163,10 @@ async def upload_note(
 ):
     """
     Upload a PlaudAI transcript (raw transcript + optional formatted note)
-    
-    - Automatically creates or updates patient record by Athena MRN
-    - Parses transcript for medical tags
-    - Extracts PVI registry fields
-    - Stores both raw transcript and PlaudAI's formatted note
-    - Returns confidence score and processing results
     """
     try:
+        logger.info(f"Processing upload for MRN: {data.athena_mrn}")
+        
         patient_data = {
             "first_name": data.first_name,
             "last_name": data.last_name,
@@ -162,6 +198,8 @@ async def upload_note(
         if not result["has_plaud_note"]:
             warnings.append("No PlaudAI formatted note provided - using raw transcript only")
         
+        logger.info(f"Upload successful for Patient ID: {result['patient_id']}, Transcript ID: {result['transcript_id']}")
+        
         return UploadResponse(
             status="success",
             message=f"Transcript uploaded successfully",
@@ -173,7 +211,7 @@ async def upload_note(
         )
     
     except Exception as e:
-        logger.error(f"Upload failed: {e}")
+        logger.error(f"Upload failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -184,13 +222,9 @@ async def batch_upload(
     request: BatchUploadRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    Upload multiple transcripts in batch
-    
-    - Max 50 items per request
-    - Returns summary of successful and failed uploads
-    """
+    """Upload multiple transcripts in batch"""
     try:
+        logger.info(f"Starting batch upload of {len(request.items)} items")
         items = [
             {
                 "patient_data": item.patient_data.dict(),
@@ -201,6 +235,7 @@ async def batch_upload(
         ]
         
         result = batch_upload_transcripts(db, items)
+        logger.info(f"Batch completed: {result['successful']} success, {result['failed']} failed")
         
         return BatchUploadResponse(
             status="completed",
@@ -211,7 +246,7 @@ async def batch_upload(
         )
     
     except Exception as e:
-        logger.error(f"Batch upload failed: {e}")
+        logger.error(f"Batch upload failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -226,22 +261,18 @@ async def upload_file(
     athena_mrn: str = "",
     db: Session = Depends(get_db)
 ):
-    """
-    Upload transcript from file (TXT, MD, JSON)
-    """
+    """Upload transcript from file (TXT, MD, JSON)"""
     try:
-        # Read file content
+        logger.info(f"Received file upload: {file.filename} for MRN: {athena_mrn}")
         content = await file.read()
         text = content.decode('utf-8')
         
-        # Validate required fields
         if not all([first_name, last_name, dob, athena_mrn]):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Missing required patient information"
             )
         
-        # Create upload data
         from datetime import datetime
         upload_data = TranscriptUpload(
             first_name=first_name,
@@ -252,11 +283,10 @@ async def upload_file(
             transcript_title=file.filename or "PlaudAI Upload"
         )
         
-        # Use regular upload endpoint
         return await upload_note(upload_data, db)
     
     except Exception as e:
-        logger.error(f"File upload failed: {e}")
+        logger.error(f"File upload failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -278,6 +308,7 @@ async def list_patients(
             patients = db.query(Patient).limit(limit).all()
         return patients
     except Exception as e:
+        logger.error(f"Error listing patients: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -299,7 +330,6 @@ async def list_patient_transcripts(
     patient_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get all transcripts for a patient"""
     transcripts = get_patient_transcripts(db, patient_id)
     return transcripts
 
@@ -308,13 +338,11 @@ async def list_patient_procedures(
     patient_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get all PVI procedures for a patient"""
     procedures = get_patient_procedures(db, patient_id)
     return procedures
 
 @app.get("/transcripts/{transcript_id}", response_model=TranscriptResponse)
 async def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
-    """Get transcript by ID"""
     transcript = db.query(VoiceTranscript).filter_by(id=transcript_id).first()
     if not transcript:
         raise HTTPException(
@@ -333,7 +361,6 @@ async def get_statistics(db: Session = Depends(get_db)):
         total_transcripts = db.query(VoiceTranscript).count()
         total_procedures = db.query(PVIProcedure).count()
         
-        # Recent uploads (last 7 days)
         from datetime import timedelta
         seven_days_ago = datetime.now() - timedelta(days=7)
         recent_transcripts = db.query(VoiceTranscript).filter(
@@ -348,6 +375,7 @@ async def get_statistics(db: Session = Depends(get_db)):
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
+        logger.error(f"Stats error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -363,17 +391,9 @@ async def generate_synopsis(
     force_regenerate: bool = False,
     db: Session = Depends(get_db)
 ):
-    """
-    Generate AI-powered clinical synopsis from patient's data
-    
-    - **patient_id**: Database patient ID
-    - **synopsis_type**: comprehensive, visit_summary, problem_list, procedure_summary
-    - **days_back**: How many days of history to include (default 365)
-    - **force_regenerate**: Force new generation even if recent synopsis exists
-    
-    Requires GOOGLE_API_KEY to be configured
-    """
+    """Generate AI-powered clinical synopsis"""
     try:
+        logger.info(f"Generating synopsis for Patient {patient_id} (Type: {synopsis_type})")
         synopsis = generate_clinical_synopsis(
             db,
             patient_id=patient_id,
@@ -395,12 +415,13 @@ async def generate_synopsis(
         }
     
     except ValueError as e:
+        logger.warning(f"Synopsis generation warning: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Synopsis generation failed: {e}")
+        logger.error(f"Synopsis generation failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Synopsis generation failed: {str(e)}"
@@ -412,9 +433,7 @@ async def get_patient_synopses(
     synopsis_type: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """
-    Get all synopses for a patient, optionally filtered by type
-    """
+    """Get all synopses for a patient"""
     try:
         if synopsis_type:
             synopsis = get_latest_synopsis(db, patient_id, synopsis_type)
@@ -447,6 +466,7 @@ async def get_patient_synopses(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching synopses: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -488,11 +508,9 @@ async def get_clinical_patient_summary(
 ):
     """
     **CLINICAL USE**: Quick patient summary by MRN
-    
-    Returns demographics + latest comprehensive synopsis
-    Perfect for pulling up patient info during clinical encounters
     """
     try:
+        logger.info(f"Fetching clinical summary for MRN: {mrn}")
         summary = get_patient_summary(db, mrn)
         return summary
     except ValueError as e:
@@ -501,10 +519,16 @@ async def get_clinical_patient_summary(
             detail=str(e)
         )
     except Exception as e:
+        logger.error(f"Clinical summary failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+# ==================== Static Files & Frontend ====================
+
+# Serve frontend - must be last!
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 # Run with: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 if __name__ == "__main__":

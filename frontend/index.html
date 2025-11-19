@@ -328,7 +328,7 @@ Patient presents with...
     </div>
     
     <script>
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = 'http://100.75.237.36:8001';
         
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -347,7 +347,7 @@ Patient presents with...
                 birth_sex: formData.get('birth_sex') || null,
                 race: formData.get('race') || null,
                 transcript_title: formData.get('transcript_title') || 'PlaudAI Voice Note',
-                transcript_text: formData.get('transcript_text')
+                raw_transcript: formData.get('transcript_text')  // <-- CHANGED
             };
             
             try {
