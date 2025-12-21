@@ -1,6 +1,8 @@
 """
-PlaudAI Uploader - FastAPI Main Application
+Albany Vascular Specialist Center - AI Clinical Documentation System
+Vascular Surgery AI Uploader and Surgical Note Generator
 """
+import os
 import time
 import uuid
 import logging
@@ -16,7 +18,7 @@ from sqlalchemy.orm import Session
 # Imports from local modules
 from .db import Base, engine, get_db, check_connection, init_db
 from .config import API_HOST, API_PORT, DEBUG
-from .logging_config import configure_logging  # <--- NEW IMPORT
+from .logging_config import configure_logging
 from .models import Patient, VoiceTranscript, PVIProcedure
 from .schemas import (
     PatientCreate, PatientResponse,
@@ -30,32 +32,37 @@ from .services.uploader import (
     batch_upload_transcripts,
     get_patient_transcripts,
     get_patient_procedures,
-    search_patients
+    search_patients,
+    get_or_create_patient,
+    create_pvi_procedure
 )
 from .services.gemini_synopsis import (
     generate_clinical_synopsis,
     get_latest_synopsis,
     get_all_synopses,
-    get_patient_summary
+    get_patient_summary,
+    calculate_age
 )
+from .services.parser import generate_tags, extract_pvi_fields
+from .services.category_parser import parse_by_category, generate_category_summary
+from .services.clinical_query import process_clinical_query
+from .services.gemini_parser import parse_with_gemini, generate_record_summary
 
 # ==================== Logging Setup ====================
-# Initialize detailed logging configuration
 configure_logging()
 logger = logging.getLogger(__name__)
 
 # ==================== App Initialization ====================
 app = FastAPI(
-    title="PlaudAI Uploader",
-    description="Voice transcript upload and processing for Surgical Command Center",
-    version="1.1.0",
+    title="Albany Vascular AI Clinical System",
+    description="Vascular Surgery AI Uploader and Surgical Note Generator - Advanced clinical documentation with AI-powered transcript processing, PVI registry integration, and automated synopsis generation",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
 # ==================== Middleware ====================
 
-# 1. Logging Middleware (Insert this FIRST)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """
@@ -65,32 +72,21 @@ async def log_requests(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
     
-    # Log Request Start
     logger.info(f"➡️ [{request_id}] {request.method} {request.url.path}")
     
     try:
         response = await call_next(request)
-        
-        # Log Response Success
         process_time = (time.time() - start_time) * 1000
-        logger.info(
-            f"⬅️ [{request_id}] {response.status_code} - {process_time:.2f}ms"
-        )
+        logger.info(f"⬅️ [{request_id}] {response.status_code} - {process_time:.2f}ms")
         return response
-        
     except Exception as e:
-        # Log Unexpected Errors
         process_time = (time.time() - start_time) * 1000
-        logger.error(
-            f"❌ [{request_id}] FAILED - {process_time:.2f}ms - Error: {str(e)}", 
-            exc_info=True
-        )
+        logger.error(f"❌ [{request_id}] FAILED - {process_time:.2f}ms - Error: {str(e)}", exc_info=True)
         raise
 
-# 2. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,29 +97,27 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
-    logger.info("🚀 Starting PlaudAI Uploader API...")
-    
-    # Check database connection
+    logger.info("🚀 Starting Albany Vascular AI Clinical System...")
+
     if not check_connection():
         logger.critical("❌ Database connection failed! Application cannot start.")
         raise RuntimeError("Cannot connect to database")
-    
-    # Initialize tables
+
     try:
         init_db()
         logger.info("✅ Database initialized successfully")
     except Exception as e:
         logger.critical(f"❌ Database initialization failed: {e}")
         raise
-    
-    logger.info("✅ PlaudAI Uploader API ready to accept connections")
+
+    logger.info("✅ Albany Vascular AI Clinical System ready to accept connections")
 
 @app.get("/")
 async def root():
     """Health check and API info"""
     return {
-        "service": "PlaudAI Uploader",
-        "version": "1.1.0",
+        "service": "Albany Vascular AI Clinical System",
+        "version": "2.0.0",
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "database": "connected",
@@ -132,7 +126,8 @@ async def root():
             "batch_upload": "/batch-upload",
             "patients": "/patients",
             "transcripts": "/transcripts",
-            "procedures": "/procedures"
+            "procedures": "/procedures",
+            "emr_chart": "/patients/{id}/emr-chart"
         }
     }
 
@@ -140,7 +135,6 @@ async def root():
 async def health_check(db: Session = Depends(get_db)):
     """Detailed health check"""
     try:
-        # Test database query using text() for SQLAlchemy 2.x compatibility
         from sqlalchemy import text
         db.execute(text("SELECT 1"))
         db_status = "healthy"
@@ -162,10 +156,13 @@ async def upload_note(
     db: Session = Depends(get_db)
 ):
     """
-    Upload a PlaudAI transcript (raw transcript + optional formatted note)
+    Upload a voice transcript with AI-powered category-specific parsing
+
+    Supports operative notes, imaging reports, lab results, and office visit notes
     """
     try:
-        logger.info(f"Processing upload for MRN: {data.athena_mrn}")
+        category = data.record_category or "office_visit"
+        logger.info(f"Processing {category} upload for MRN: {data.athena_mrn}")
         
         patient_data = {
             "first_name": data.first_name,
@@ -177,80 +174,166 @@ async def upload_note(
             "zip_code": data.zip_code
         }
         
-        result = upload_transcript(
-            db,
-            patient_data=patient_data,
+        # Get or create patient
+        patient = get_or_create_patient(db, patient_data)
+        
+        # Determine which text to parse
+        text_to_parse = data.plaud_note if data.plaud_note else data.raw_transcript
+        
+        # Category-specific Gemini parsing
+        logger.info(f"⚙️ Running category-specific parsing for {category}...")
+        category_data = parse_by_category(text_to_parse, category)
+        category_summary = generate_category_summary(category_data, category)
+        
+        # Also run general medical tagging
+        tags = generate_tags(text_to_parse)
+        
+        # Extract PVI fields only for operative notes
+        pvi_fields = {}
+        if category == "operative_note":
+            pvi_fields = extract_pvi_fields(text_to_parse)
+        
+        # Calculate confidence
+        confidence = 1.0 if 'error' not in category_data else 0.3
+        
+        # Create transcript record
+        transcript = VoiceTranscript(
+            patient_id=patient.id,
+            transcript_title=data.transcript_title or f"{category.replace('_', ' ').title()} - {datetime.now().strftime('%Y-%m-%d')}",
             raw_transcript=data.raw_transcript,
             plaud_note=data.plaud_note,
-            title=data.transcript_title,
+            record_category=category,
+            record_subtype=data.record_subtype,
+            category_specific_data=category_data,
             visit_type=data.visit_type,
             recording_duration=data.recording_duration,
-            recording_date=data.recording_date,
+            recording_date=data.recording_date or datetime.now(),
             plaud_recording_id=data.plaud_recording_id,
-            auto_process=True
+            tags=tags,
+            confidence_score=confidence,
+            is_processed=True,
+            visit_date=data.recording_date or datetime.now()
         )
         
-        warnings = []
-        if result["confidence_score"] < 0.5:
-            warnings.append("Low confidence score - manual review recommended")
-        if result["pvi_fields_extracted"] < 5:
-            warnings.append("Few PVI fields extracted - consider adding more detail")
-        if not result["has_plaud_note"]:
-            warnings.append("No PlaudAI formatted note provided - using raw transcript only")
+        db.add(transcript)
+        db.commit()
+        db.refresh(transcript)
         
-        logger.info(f"Upload successful for Patient ID: {result['patient_id']}, Transcript ID: {result['transcript_id']}")
+        # Create PVI procedure if applicable
+        pvi_procedure_id = None
+        if pvi_fields and len(pvi_fields) >= 3:
+            logger.info(f"🏥 Creating PVI procedure record...")
+            try:
+                pvi_procedure_id = create_pvi_procedure(db, patient.id, transcript.id, pvi_fields)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not create PVI procedure: {e}")
+        
+        warnings = []
+        if confidence < 0.5:
+            warnings.append("Low confidence - manual review recommended")
+        if 'error' in category_data:
+            warnings.append(f"Category parsing issue: {category_data.get('error', 'Unknown error')}")
+        
+        logger.info(f"✅ {category} record saved: ID {transcript.id}")
         
         return UploadResponse(
             status="success",
-            message=f"Transcript uploaded successfully",
-            patient_id=result["patient_id"],
-            transcript_id=result["transcript_id"],
-            tags=result["tags"],
-            confidence_score=result["confidence_score"],
+            message=f"{category.replace('_', ' ').title()} uploaded successfully",
+            patient_id=patient.id,
+            transcript_id=transcript.id,
+            tags=tags,
+            confidence_score=confidence,
             warnings=warnings if warnings else None
         )
     
     except Exception as e:
-        logger.error(f"Upload failed: {e}", exc_info=True)
+        logger.error(f"❌ Upload failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
 
-@app.post("/batch-upload", response_model=BatchUploadResponse)
-async def batch_upload(
-    request: BatchUploadRequest,
+@app.post("/upload-medical-record")
+async def upload_medical_record(
+    data: dict,
     db: Session = Depends(get_db)
 ):
-    """Upload multiple transcripts in batch"""
-    try:
-        logger.info(f"Starting batch upload of {len(request.items)} items")
-        items = [
-            {
-                "patient_data": item.patient_data.dict(),
-                "transcript_text": item.transcript_text,
-                "title": item.transcript_title
-            }
-            for item in request.items
-        ]
-        
-        result = batch_upload_transcripts(db, items)
-        logger.info(f"Batch completed: {result['successful']} success, {result['failed']} failed")
-        
-        return BatchUploadResponse(
-            status="completed",
-            total=result["total"],
-            successful=result["successful"],
-            failed=result["failed"],
-            results=result["details"]
-        )
+    """
+    Upload categorized medical record with Gemini parsing
     
-    except Exception as e:
-        logger.error(f"Batch upload failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+    Request body:
+    {
+      "patient": {"first_name": "...", "last_name": "...", "dob": "...", "athena_mrn": "..."},
+      "record_type": "operative_note|office_visit|ultrasound|ct_scan|mri|xray|lab_result",
+      "record_subtype": "Optional specific type",
+      "record_date": "YYYY-MM-DD",
+      "title": "Record title",
+      "raw_content": "PlaudAI transcript text",
+      "provider_name": "Optional provider name"
+    }
+    """
+    try:
+        logger.info(f"📥 Processing {data.get('record_type')} record")
+        
+        # Get or create patient
+        patient_data = data['patient']
+        patient = get_or_create_patient(db, patient_data)
+        
+        # Parse with Gemini
+        patient_context = {
+            "name": f"{patient.first_name} {patient.last_name}",
+            "mrn": patient.athena_mrn,
+            "age": calculate_age(patient.dob)
+        }
+        
+        parsed_data = parse_with_gemini(
+            text=data['raw_content'],
+            record_type=data['record_type'],
+            patient_context=patient_context
         )
+        
+        # Generate summary
+        summary = generate_record_summary(parsed_data, data['record_type'])
+        
+        # Extract tags (use existing parser)
+        tags = generate_tags(data['raw_content'])
+        
+        # Create medical record
+        record = MedicalRecord(
+            patient_id=patient.id,
+            record_type=data['record_type'],
+            record_subtype=data.get('record_subtype'),
+            record_date=data['record_date'],
+            title=data['title'],
+            raw_content=data['raw_content'],
+            structured_content=parsed_data,
+            gemini_summary=summary,
+            provider_name=data.get('provider_name'),
+            tags=tags,
+            confidence_score=1.0 if 'error' not in parsed_data else 0.3
+        )
+        
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        
+        logger.info(f"✅ Medical record saved: ID {record.id}")
+        
+        return {
+            "status": "success",
+            "record_id": record.id,
+            "patient_id": patient.id,
+            "record_type": record.record_type,
+            "gemini_summary": summary,
+            "structured_data": parsed_data,
+            "tags": tags
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Medical record upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ... (rest of your endpoints remain the same)
 
 @app.post("/upload-file")
 async def upload_file(
@@ -273,14 +356,13 @@ async def upload_file(
                 detail="Missing required patient information"
             )
         
-        from datetime import datetime
         upload_data = TranscriptUpload(
             first_name=first_name,
             last_name=last_name,
             dob=datetime.fromisoformat(dob).date(),
             athena_mrn=athena_mrn,
-            transcript_text=text,
-            transcript_title=file.filename or "PlaudAI Upload"
+            raw_transcript=text,
+            transcript_title=file.filename or "Voice Transcript Upload"
         )
         
         return await upload_note(upload_data, db)
@@ -330,6 +412,7 @@ async def list_patient_transcripts(
     patient_id: int,
     db: Session = Depends(get_db)
 ):
+    """Get all transcripts for a patient"""
     transcripts = get_patient_transcripts(db, patient_id)
     return transcripts
 
@@ -338,11 +421,13 @@ async def list_patient_procedures(
     patient_id: int,
     db: Session = Depends(get_db)
 ):
+    """Get all PVI procedures for a patient"""
     procedures = get_patient_procedures(db, patient_id)
     return procedures
 
 @app.get("/transcripts/{transcript_id}", response_model=TranscriptResponse)
 async def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
+    """Get specific transcript by ID"""
     transcript = db.query(VoiceTranscript).filter_by(id=transcript_id).first()
     if not transcript:
         raise HTTPException(
@@ -350,6 +435,106 @@ async def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
             detail="Transcript not found"
         )
     return transcript
+
+# ==================== EMR Category Endpoints ====================
+
+@app.get("/patients/{patient_id}/records-by-category")
+async def get_records_by_category(
+    patient_id: int,
+    category: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get patient records, optionally filtered by category
+    
+    Categories: operative_note, imaging, lab_result, office_visit, or 'all'
+    """
+    query = db.query(VoiceTranscript).filter_by(patient_id=patient_id)
+    
+    if category and category != "all":
+        query = query.filter_by(record_category=category)
+    
+    records = query.order_by(VoiceTranscript.recording_date.desc()).all()
+    
+    return {
+        "patient_id": patient_id,
+        "category": category or "all",
+        "total": len(records),
+        "records": [
+            {
+                "id": r.id,
+                "category": r.record_category or "office_visit",
+                "subtype": r.record_subtype,
+                "date": r.recording_date.isoformat() if r.recording_date else None,
+                "title": r.transcript_title,
+                "summary": generate_category_summary(
+                    r.category_specific_data or {},
+                    r.record_category or "office_visit"
+                ),
+                "structured_data": r.category_specific_data,
+                "tags": r.tags,
+                "confidence_score": r.confidence_score
+            }
+            for r in records
+        ]
+    }
+
+@app.get("/patients/{patient_id}/emr-chart")
+async def get_emr_chart(
+    patient_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get complete EMR chart organized by category
+    """
+    patient = db.query(Patient).filter_by(id=patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    # Get all records
+    records = db.query(VoiceTranscript).filter_by(patient_id=patient_id).order_by(
+        VoiceTranscript.recording_date.desc()
+    ).all()
+    
+    # Organize by category
+    chart = {
+        "patient": {
+            "id": patient.id,
+            "name": f"{patient.first_name} {patient.last_name}",
+            "mrn": patient.athena_mrn,
+            "dob": str(patient.dob),
+            "age": calculate_age(patient.dob)
+        },
+        "operative_notes": [],
+        "imaging": [],
+        "lab_results": [],
+        "office_visits": []
+    }
+    
+    for r in records:
+        record_data = {
+            "id": r.id,
+            "date": r.recording_date.isoformat() if r.recording_date else None,
+            "title": r.transcript_title,
+            "subtype": r.record_subtype,
+            "summary": generate_category_summary(
+                r.category_specific_data or {},
+                r.record_category or "office_visit"
+            ),
+            "structured_data": r.category_specific_data
+        }
+        
+        category = r.record_category or "office_visit"
+        if category == "operative_note":
+            chart["operative_notes"].append(record_data)
+        elif category == "imaging":
+            chart["imaging"].append(record_data)
+        elif category == "lab_result":
+            chart["lab_results"].append(record_data)
+        else:
+            chart["office_visits"].append(record_data)
+    
+    return chart
 
 # ==================== Statistics ====================
 
@@ -525,12 +710,170 @@ async def get_clinical_patient_summary(
             detail=str(e)
         )
 
+# ==================== Clinical Query Endpoint ====================
+
+@app.post("/clinical/query")
+async def clinical_query_endpoint(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Natural language clinical query interface
+    """
+    query = request.get("query", "").strip()
+    
+    if not query:
+        logger.warning("Empty query received")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query cannot be empty"
+        )
+    
+    logger.info(f"📥 Clinical query received: '{query[:50]}...'")
+    
+    try:
+        result = process_clinical_query(query, db)
+        
+        if result["status"] == "error":
+            logger.warning(f"⚠️ Query failed: {result.get('message')}")
+            return result
+        
+        logger.info(f"✅ Query successful for patient: {result['patient']['mrn']}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Clinical query endpoint error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Query processing failed: {str(e)}"
+        )
+# ==================== PDF Generation Endpoint ====================
+
+@app.post("/generate-pdf/{transcript_id}")
+async def generate_pdf_for_record(
+    transcript_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate PDF for a specific medical record
+    
+    Returns download URL for the generated PDF
+    """
+    from .services.pdf_generator import generate_medical_record_pdf
+    from .services.gemini_synopsis import calculate_age
+    
+    try:
+        # Get transcript
+        transcript = db.query(VoiceTranscript).filter_by(id=transcript_id).first()
+        if not transcript:
+            raise HTTPException(status_code=404, detail="Transcript not found")
+        
+        # Get patient
+        patient = db.query(Patient).filter_by(id=transcript.patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        
+        # Prepare patient data
+        patient_data = {
+            "name": f"{patient.first_name} {patient.last_name}",
+            "mrn": patient.athena_mrn,
+            "dob": str(patient.dob),
+            "age": calculate_age(patient.dob)
+        }
+        
+        # Generate PDF
+        category = transcript.record_category or "office_visit"
+        category_data = transcript.category_specific_data or {}
+        raw_text = transcript.plaud_note if transcript.plaud_note else transcript.raw_transcript
+        
+        pdf_path = generate_medical_record_pdf(
+            patient_data=patient_data,
+            category=category,
+            category_data=category_data,
+            raw_transcript=raw_text
+        )
+        
+        # Get filename
+        filename = os.path.basename(pdf_path)
+        
+        return {
+            "status": "success",
+            "message": "PDF generated successfully",
+            "pdf_path": pdf_path,
+            "pdf_url": f"/clinical_pdfs/{filename}",
+            "filename": filename
+        }
+    
+    except Exception as e:
+        logger.error(f"PDF generation failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.post("/generate-synopsis-pdf/{patient_id}")
+async def generate_synopsis_pdf_endpoint(
+    patient_id: int,
+    synopsis_type: str = "comprehensive",
+    days_back: int = 365,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate AI synopsis and create PDF in one call
+    """
+    from .services.pdf_generator import generate_synopsis_pdf
+    from .services.gemini_synopsis import calculate_age
+    
+    try:
+        # Generate or get synopsis
+        synopsis = generate_clinical_synopsis(
+            db,
+            patient_id=patient_id,
+            synopsis_type=synopsis_type,
+            days_back=days_back
+        )
+        
+        # Get patient
+        patient = db.query(Patient).filter_by(id=patient_id).first()
+        
+        patient_data = {
+            "name": f"{patient.first_name} {patient.last_name}",
+            "mrn": patient.athena_mrn,
+            "age": calculate_age(patient.dob)
+        }
+        
+        # Generate PDF
+        pdf_path = generate_synopsis_pdf(
+            patient_data=patient_data,
+            synopsis_text=synopsis.synopsis_text,
+            synopsis_type=synopsis_type
+        )
+        
+        filename = os.path.basename(pdf_path)
+        
+        return {
+            "status": "success",
+            "synopsis_id": synopsis.id,
+            "pdf_path": pdf_path,
+            "pdf_url": f"/clinical_pdfs/{filename}",
+            "filename": filename
+        }
+    
+    except Exception as e:
+        logger.error(f"Synopsis PDF generation failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 # ==================== Static Files & Frontend ====================
+
+# Serve generated PDFs
+app.mount("/clinical_pdfs", StaticFiles(directory="clinical_pdfs"), name="clinical_pdfs")
 
 # Serve frontend - must be last!
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
-# Run with: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# Run with: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=API_HOST, port=API_PORT)

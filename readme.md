@@ -1,8 +1,10 @@
-# 🏥 PlaudAI Uploader
+# Albany Vascular Specialist Center
 
-**Voice Transcript Import System for Surgical Command Center**
+## Vascular Surgery AI Uploader and Surgical Note Generator
 
-A standalone mini-application that imports PlaudAI voice transcripts, automatically parses medical content, extracts PVI (Peripheral Vascular Intervention) registry fields, and stores structured data in your PostgreSQL database.
+**Advanced Clinical Documentation System for Vascular Surgery**
+
+An intelligent medical documentation platform that imports voice transcripts, automatically generates structured surgical notes, extracts PVI (Peripheral Vascular Intervention) registry fields, creates AI-powered clinical synopses, and manages comprehensive patient records for the Albany Vascular Specialist Center.
 
 ---
 
@@ -56,9 +58,13 @@ A standalone mini-application that imports PlaudAI voice transcripts, automatica
 mkdir -p /opt/plaudai_uploader
 cd /opt/plaudai_uploader
 ```
+
+Or for development:
+```bash
 cd ~/plaudai_uploader
 conda activate plaudai
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
+```
 
 ### 2. Install Dependencies
 
@@ -273,8 +279,8 @@ curl http://localhost:8000/stats
 **GET /** - Health check
 ```json
 {
-  "service": "PlaudAI Uploader",
-  "version": "1.0.0",
+  "service": "Albany Vascular AI Clinical System",
+  "version": "2.0.0",
   "status": "healthy",
   "database": "connected"
 }
@@ -497,11 +503,12 @@ User → Frontend (HTML/JS)
 
 ### Integration with SCC
 
-PlaudAI Uploader is designed as a **modular component** that:
-- Runs independently on separate port (8000)
+The Albany Vascular AI Clinical System is designed as a **modular component** that:
+- Runs independently on separate port (8001)
 - Shares the same PostgreSQL database
 - Doesn't conflict with existing SCC tables
 - Can be embedded in SCC UI later
+- Provides comprehensive AI-powered clinical documentation
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams and integration patterns.
 
@@ -705,13 +712,17 @@ FROM voice_transcripts;
 
 ## 🎉 Acknowledgments
 
-- FastAPI framework
-- SQLAlchemy ORM
-- PlaudAI for voice recording technology
-- SVS VQI for registry standards
+- **Albany Vascular Specialist Center** - Clinical expertise and guidance
+- FastAPI framework - Modern Python web framework
+- Google Gemini AI - Advanced natural language processing
+- SQLAlchemy ORM - Database management
+- PlaudAI - Voice recording technology
+- SVS VQI - Vascular registry standards
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: November 2025  
-**Maintainer**: Surgical Command Center Team
+**Version**: 2.0.0
+**Last Updated**: December 2025
+**Organization**: Albany Vascular Specialist Center
+**Location**: 2300 Dawson Road, Suite 101, Albany, GA 31707
+**Contact**: (229) 436-8535

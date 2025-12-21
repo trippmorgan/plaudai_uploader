@@ -3,49 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PlaudAI Uploader - Surgical Command Center</title>
+    <title>Albany Vascular - AI Clinical Documentation</title>
     <style>
+        :root {
+            --primary-brown: #6B5D4F;
+            --gold-tan: #C8A882;
+            --cream-bg: #F5F1E8;
+            --dark-brown: #4A3F35;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Georgia, 'Times New Roman', serif;
+            background: linear-gradient(135deg, var(--cream-bg) 0%, #E8DCC8 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        
+
         .container {
-            max-width: 900px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 60px rgba(107, 93, 79, 0.3);
             overflow: hidden;
         }
-        
+
         .header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: white;
-            padding: 30px;
+            background: linear-gradient(135deg, var(--primary-brown) 0%, var(--dark-brown) 100%);
+            color: var(--gold-tan);
+            padding: 40px 30px;
             text-align: center;
+            border-bottom: 4px solid var(--gold-tan);
         }
-        
+
         .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
+            font-size: 32px;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+            font-weight: 400;
+            color: var(--gold-tan);
+        }
+
+        .header p {
+            opacity: 0.95;
+            font-size: 15px;
+            color: #F5F1E8;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
+        .tab-container {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 16px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            background: white;
+            color: var(--primary-brown);
+            border-bottom: 3px solid var(--gold-tan);
+        }
+
+        .tab:hover {
+            background: rgba(200, 168, 130, 0.1);
         }
         
         .content {
             padding: 40px;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
         }
         
         .form-section {
@@ -53,10 +103,10 @@
         }
         
         .form-section h2 {
-            color: #2a5298;
+            color: var(--primary-brown);
             margin-bottom: 15px;
             font-size: 18px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--gold-tan);
             padding-bottom: 8px;
         }
         
@@ -98,13 +148,192 @@
         textarea:focus,
         select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--gold-tan);
         }
         
         textarea {
             resize: vertical;
             font-family: 'Courier New', monospace;
             line-height: 1.6;
+        }
+        
+        .emr-container {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .emr-sidebar {
+            width: 250px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .emr-main {
+            flex: 1;
+        }
+        
+        .category-nav {
+            list-style: none;
+        }
+        
+        .category-nav li {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-left: 4px solid transparent;
+        }
+        
+        .category-nav li:hover {
+            border-left-color: var(--gold-tan);
+            transform: translateX(5px);
+        }
+
+        .category-nav li.active {
+            background: var(--primary-brown);
+            color: var(--gold-tan);
+            border-left-color: var(--dark-brown);
+        }
+        
+        .record-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .record-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .record-card.operative_note { border-left-color: #dc3545; }
+        .record-card.imaging { border-left-color: #17a2b8; }
+        .record-card.lab_result { border-left-color: #28a745; }
+        .record-card.office_visit { border-left-color: #ffc107; }
+        
+        .record-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .record-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .record-date {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .record-summary {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            margin-top: 10px;
+        }
+        
+        .category-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        
+        .badge-operative_note { background: #dc354520; color: #dc3545; }
+        .badge-imaging { background: #17a2b820; color: #17a2b8; }
+        .badge-lab_result { background: #28a74520; color: #28a745; }
+        .badge-office_visit { background: #ffc10720; color: #d39e00; }
+        
+        .query-section {
+            margin-bottom: 30px;
+        }
+        
+        .query-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .query-input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        .quick-queries {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .query-button {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-align: left;
+        }
+        
+        .query-button:hover {
+            background: var(--primary-brown);
+            color: var(--gold-tan);
+            border-color: var(--primary-brown);
+            transform: translateY(-2px);
+        }
+        
+        .patient-info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .patient-info-box.show {
+            display: block;
+        }
+        
+        .clinical-response {
+            background: #F5F1E8;
+            border-left: 4px solid var(--gold-tan);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+            white-space: pre-wrap;
+            line-height: 1.8;
+        }
+
+        .clinical-response.show {
+            display: block;
+        }
+
+        .clinical-response h3 {
+            color: var(--primary-brown);
+            margin-bottom: 15px;
         }
         
         .button-group {
@@ -124,14 +353,15 @@
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: linear-gradient(135deg, var(--primary-brown) 0%, var(--dark-brown) 100%);
+            color: var(--gold-tan);
             flex: 1;
+            font-weight: 600;
         }
-        
+
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 5px 15px rgba(107, 93, 79, 0.4);
         }
         
         .btn-secondary {
@@ -143,12 +373,97 @@
             background: #e0e0e0;
         }
         
+        .btn-search {
+            background: #28a745;
+            color: white;
+            padding: 15px 40px;
+        }
+        
+        .btn-search:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+        
+        .btn-pdf {
+            background: #dc3545;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-pdf:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(220, 53, 69, 0.3);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .close-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .structured-data {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        
         .result-box {
             margin-top: 25px;
             padding: 20px;
             background: #f8f9fa;
             border-radius: 6px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid var(--gold-tan);
             display: none;
         }
         
@@ -174,46 +489,34 @@
             overflow-y: auto;
         }
         
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-top: 20px;
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
         }
         
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 6px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .stat-value {
-            font-size: 28px;
-            font-weight: bold;
-            color: #667eea;
-        }
-        
-        .stat-label {
+        .tag {
+            background: var(--primary-brown);
+            color: var(--gold-tan);
+            padding: 4px 12px;
+            border-radius: 20px;
             font-size: 12px;
-            color: #666;
-            margin-top: 5px;
         }
-        
+
         .loading {
             display: none;
             text-align: center;
             padding: 20px;
         }
-        
+
         .loading.show {
             display: block;
         }
-        
+
         .spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid var(--gold-tan);
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -226,118 +529,451 @@
             100% { transform: rotate(360deg); }
         }
         
-        .tag-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
         }
         
-        .tag {
-            background: #667eea;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        /* Patient List Styles */
+        .patient-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .patient-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid var(--gold-tan);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .patient-item:hover {
+            background: var(--cream-bg);
+            transform: translateX(5px);
+            box-shadow: 0 3px 10px rgba(107, 93, 79, 0.15);
+        }
+
+        .patient-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .patient-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--primary-brown);
+        }
+
+        .patient-mrn {
+            font-size: 14px;
+            color: #666;
+            margin-top: 3px;
+        }
+
+        .patient-dob {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .patient-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-view {
+            background: var(--primary-brown);
+            color: var(--gold-tan);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-view:hover {
+            background: var(--dark-brown);
+            transform: translateY(-2px);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🏥 PlaudAI Uploader</h1>
-            <p>Voice Transcript Import for Surgical Command Center</p>
+            <h1>ALBANY VASCULAR SPECIALIST CENTER</h1>
+            <p>Vascular Surgery AI Uploader and Surgical Note Generator</p>
+        </div>
+        
+        <div class="tab-container">
+            <button class="tab active" onclick="switchTab('upload')">📤 Upload Transcript</button>
+            <button class="tab" onclick="switchTab('search')">👥 Patient Search</button>
+            <button class="tab" onclick="switchTab('emr')">📋 Medical Records</button>
+            <button class="tab" onclick="switchTab('query')">🔍 Clinical Query</button>
         </div>
         
         <div class="content">
-            <form id="uploadForm">
+            <!-- UPLOAD TAB -->
+            <div id="uploadTab" class="tab-content active">
+                <form id="uploadForm">
+                    <div class="form-section">
+                        <h2>👤 Patient Information</h2>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="firstName">First Name *</label>
+                                <input type="text" id="firstName" name="first_name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="lastName">Last Name *</label>
+                                <input type="text" id="lastName" name="last_name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="dob">Date of Birth *</label>
+                                <input type="date" id="dob" name="dob" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="athenaMrn">Athena MRN *</label>
+                                <input type="text" id="athenaMrn" name="athena_mrn" required placeholder="e.g., MRN123456">
+                            </div>
+                            <div class="form-group">
+                                <label for="birthSex">Birth Sex</label>
+                                <select id="birthSex" name="birth_sex">
+                                    <option value="">Select...</option>
+                                    <option value="M">Male</option>
+                                    <option value="F">Female</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="race">Race</label>
+                                <input type="text" id="race" name="race" placeholder="Optional">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h2>📝 Record Details</h2>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="recordCategory">Record Type *</label>
+                                <select id="recordCategory" name="record_category" required>
+                                    <option value="office_visit">📝 Office Visit / H&P</option>
+                                    <option value="operative_note">🔪 Operative Note</option>
+                                    <option value="imaging">📷 Imaging (CT/US/MRI/X-Ray)</option>
+                                    <option value="lab_result">🧪 Lab Results</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="recordSubtype">Subtype (Optional)</label>
+                                <input type="text" id="recordSubtype" name="record_subtype" placeholder="e.g., CT Abdomen, Carotid Duplex">
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="transcriptTitle">Title</label>
+                            <input type="text" id="transcriptTitle" name="transcript_title" placeholder="Auto-generated if left blank">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="transcriptText">PlaudAI Transcript *</label>
+                            <textarea id="transcriptText" name="transcript_text" rows="16" required placeholder="Paste your PlaudAI transcript here..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary">📤 Process & Upload</button>
+                        <button type="button" class="btn-secondary" onclick="clearUploadForm()">🗑️ Clear</button>
+                    </div>
+                </form>
+                
+                <div class="loading" id="uploadLoading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #666;">Processing with AI...</p>
+                </div>
+                
+                <div class="result-box" id="uploadResultBox">
+                    <h3 id="uploadResultTitle">Result</h3>
+                    <div class="result-content" id="uploadResultContent"></div>
+                    <div id="tagList" class="tag-list"></div>
+                </div>
+            </div>
+            
+            <!-- PATIENT SEARCH TAB -->
+            <div id="searchTab" class="tab-content">
                 <div class="form-section">
-                    <h2>👤 Patient Information</h2>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="firstName">First Name *</label>
-                            <input type="text" id="firstName" name="first_name" required>
+                    <h2>👥 Patient Database Search</h2>
+                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                        Search by name or MRN, or browse all patients in the database
+                    </p>
+
+                    <div class="query-input-group">
+                        <input type="text" id="patientSearchInput" class="query-input"
+                               placeholder="Search by name or MRN (leave empty to see all patients)..."
+                               onkeypress="handlePatientSearchEnter(event)">
+                        <button class="btn-search" onclick="searchPatients()">🔍 Search</button>
+                        <button class="btn-secondary" onclick="loadAllPatients()" style="padding: 15px 25px;">📋 All</button>
+                    </div>
+                </div>
+
+                <div class="loading" id="searchLoading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #666;">Searching patients...</p>
+                </div>
+
+                <div id="patientListContainer" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="color: var(--primary-brown);">Search Results</h3>
+                        <span id="patientCount" style="color: #666; font-size: 14px;"></span>
+                    </div>
+                    <div id="patientList" class="patient-list"></div>
+                </div>
+
+                <div class="empty-state" id="searchEmptyState">
+                    <div class="empty-state-icon">👥</div>
+                    <p>Search for patients or click "All" to browse the database</p>
+                </div>
+            </div>
+
+            <!-- EMR TAB -->
+            <div id="emrTab" class="tab-content">
+                <div style="margin-bottom: 20px;">
+                    <input type="text" id="emrMrnSearch" class="query-input" 
+                           placeholder="Enter patient MRN to view records..." 
+                           onkeypress="handleEmrSearchEnter(event)">
+                    <button class="btn-search" onclick="loadPatientRecords()" style="margin-top: 10px; width: 200px;">
+                        📋 Load Records
+                    </button>
+                </div>
+                
+                <div class="emr-container" id="emrContainer" style="display: none;">
+                    <div class="emr-sidebar">
+                        <h3 style="margin-bottom: 15px; color: var(--primary-brown);">Categories</h3>
+                        <ul class="category-nav">
+                            <li class="active" onclick="filterRecords('all', event)">📋 All Records</li>
+                            <li onclick="filterRecords('operative_note', event)">🔪 Op Notes</li>
+                            <li onclick="filterRecords('imaging', event)">📷 Imaging</li>
+                            <li onclick="filterRecords('lab_result', event)">🧪 Labs</li>
+                            <li onclick="filterRecords('office_visit', event)">📝 Visits</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="emr-main">
+                        <div id="patientHeader" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <h2 id="emrPatientName" style="color: var(--primary-brown);"></h2>
+                            <div style="color: #666; margin-top: 5px;">
+                                <strong>MRN:</strong> <span id="emrPatientMrn"></span> | 
+                                <strong>DOB:</strong> <span id="emrPatientDob"></span> | 
+                                <strong>Age:</strong> <span id="emrPatientAge"></span>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="lastName">Last Name *</label>
-                            <input type="text" id="lastName" name="last_name" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="dob">Date of Birth *</label>
-                            <input type="date" id="dob" name="dob" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="athenaMrn">Athena MRN *</label>
-                            <input type="text" id="athenaMrn" name="athena_mrn" required placeholder="e.g., MRN123456">
-                        </div>
-                        <div class="form-group">
-                            <label for="birthSex">Birth Sex</label>
-                            <select id="birthSex" name="birth_sex">
-                                <option value="">Select...</option>
-                                <option value="M">Male</option>
-                                <option value="F">Female</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="race">Race</label>
-                            <input type="text" id="race" name="race" placeholder="Optional">
-                        </div>
+                        
+                        <div id="recordsDisplay"></div>
                     </div>
                 </div>
                 
-                <div class="form-section">
-                    <h2>📝 Transcript Details</h2>
-                    <div class="form-group full-width">
-                        <label for="transcriptTitle">Title</label>
-                        <input type="text" id="transcriptTitle" name="transcript_title" value="PlaudAI Voice Note" placeholder="Optional title">
+                <div class="empty-state" id="emrEmptyState">
+                    <div class="empty-state-icon">📁</div>
+                    <p>Enter a patient MRN to view their medical records</p>
+                </div>
+                
+                <div class="loading" id="emrLoading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #666;">Loading medical records...</p>
+                </div>
+            </div>
+            
+            <!-- QUERY TAB -->
+            <div id="queryTab" class="tab-content">
+                <div class="query-section">
+                    <h2>🔍 Ask About a Patient</h2>
+                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                        Type a natural language question like "Give me a summary of John Doe's recent visits"
+                    </p>
+                    
+                    <div class="query-input-group">
+                        <input type="text" id="clinicalQuery" class="query-input" 
+                               placeholder="Ask about a patient..."
+                               onkeypress="handleQueryEnter(event)">
+                        <button class="btn-search" onclick="submitQuery()">🔍 Search</button>
                     </div>
-                    <div class="form-group full-width">
-                        <label for="transcriptText">PlaudAI Summary *</label>
-                        <textarea id="transcriptText" name="transcript_text" rows="16" required placeholder="Paste your PlaudAI transcript here...
-
-Example format:
-## Chief Complaint
-Patient presents with...
-
-## History
-...
-
-## Assessment
-..."></textarea>
+                    
+                    <div class="quick-queries">
+                        <button class="query-button" onclick="setQuery('Give me a summary of recent visits for ')">
+                            📋 Recent Visits Summary
+                        </button>
+                        <button class="query-button" onclick="setQuery('What procedures has patient had')">
+                            🏥 Procedure History
+                        </button>
+                        <button class="query-button" onclick="setQuery('What are the current problems for ')">
+                            ⚕️ Current Problems
+                        </button>
+                        <button class="query-button" onclick="setQuery('Any pending follow-up for ')">
+                            📅 Pending Follow-up
+                        </button>
                     </div>
                 </div>
                 
-                <div class="button-group">
-                    <button type="submit" class="btn-primary">📤 Upload Transcript</button>
-                    <button type="button" class="btn-secondary" onclick="clearForm()">🗑️ Clear</button>
+                <div class="loading" id="queryLoading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #666;">Consulting patient records...</p>
                 </div>
-            </form>
-            
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p style="margin-top: 15px; color: #666;">Processing transcript...</p>
+                
+                <div class="patient-info-box" id="patientInfoBox">
+                    <strong>📋 Patient:</strong> <span id="patientName"></span><br>
+                    <strong>🆔 MRN:</strong> <span id="patientMrn"></span>
+                </div>
+                
+                <div class="clinical-response" id="clinicalResponse">
+                    <h3>Clinical Response:</h3>
+                    <div id="responseText"></div>
+                </div>
             </div>
-            
-            <div class="result-box" id="resultBox">
-                <h3 id="resultTitle">Result</h3>
-                <div class="result-content" id="resultContent"></div>
-                <div id="tagList" class="tag-list"></div>
+        </div>
+    </div>
+    
+    <!-- Record Detail Modal -->
+    <div class="modal" id="recordModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="modalTitle"></h2>
+                    <p id="modalDate" style="color: #666; margin-top: 5px;"></p>
+                </div>
+                <button class="close-btn" onclick="closeModal()">✕ Close</button>
             </div>
+            <div id="modalBody"></div>
         </div>
     </div>
     
     <script>
         const API_BASE = 'http://100.75.237.36:8001';
+        let currentPatientId = null;
+        let allRecords = [];
+        let currentCategory = 'all';
+        
+        // ==================== TAB SWITCHING ====================
+        
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+
+            const tabs = {
+                'upload': ['uploadTab', 0],
+                'search': ['searchTab', 1],
+                'emr': ['emrTab', 2],
+                'query': ['queryTab', 3]
+            };
+
+            if (tabs[tabName]) {
+                document.getElementById(tabs[tabName][0]).classList.add('active');
+                document.querySelectorAll('.tab')[tabs[tabName][1]].classList.add('active');
+            }
+        }
+
+        // ==================== PATIENT SEARCH TAB ====================
+
+        function handlePatientSearchEnter(event) {
+            if (event.key === 'Enter') searchPatients();
+        }
+
+        async function searchPatients() {
+            const searchTerm = document.getElementById('patientSearchInput').value.trim();
+            await fetchPatients(searchTerm);
+        }
+
+        async function loadAllPatients() {
+            document.getElementById('patientSearchInput').value = '';
+            await fetchPatients('');
+        }
+
+        async function fetchPatients(searchTerm) {
+            document.getElementById('searchLoading').classList.add('show');
+            document.getElementById('searchEmptyState').style.display = 'none';
+            document.getElementById('patientListContainer').style.display = 'none';
+
+            try {
+                const url = searchTerm
+                    ? `${API_BASE}/patients?search=${encodeURIComponent(searchTerm)}&limit=100`
+                    : `${API_BASE}/patients?limit=100`;
+
+                const response = await fetch(url);
+                const patients = await response.json();
+
+                document.getElementById('searchLoading').classList.remove('show');
+
+                if (patients.length === 0) {
+                    document.getElementById('searchEmptyState').style.display = 'block';
+                    document.getElementById('searchEmptyState').innerHTML = `
+                        <div class="empty-state-icon">🔍</div>
+                        <p>No patients found${searchTerm ? ` matching "${searchTerm}"` : ''}</p>
+                    `;
+                    return;
+                }
+
+                document.getElementById('patientCount').textContent = `${patients.length} patient${patients.length !== 1 ? 's' : ''} found`;
+                document.getElementById('patientListContainer').style.display = 'block';
+
+                const listHtml = patients.map(patient => {
+                    const lastName = patient.last_name || '';
+                    const firstName = patient.first_name || '';
+                    const displayName = `${lastName}, ${firstName}`.trim();
+                    const dob = patient.dob ? new Date(patient.dob).toLocaleDateString() : 'N/A';
+
+                    return `
+                        <div class="patient-item" onclick="viewPatientRecords('${patient.athena_mrn}')">
+                            <div class="patient-info">
+                                <span class="patient-name">${displayName || 'Unknown'}</span>
+                                <span class="patient-mrn">MRN: ${patient.athena_mrn || 'N/A'}</span>
+                                <span class="patient-dob">DOB: ${dob}</span>
+                            </div>
+                            <div class="patient-actions">
+                                <button class="btn-view" onclick="event.stopPropagation(); viewPatientRecords('${patient.athena_mrn}')">
+                                    📋 View Records
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('patientList').innerHTML = listHtml;
+
+            } catch (error) {
+                document.getElementById('searchLoading').classList.remove('show');
+                document.getElementById('searchEmptyState').style.display = 'block';
+                document.getElementById('searchEmptyState').innerHTML = `
+                    <div class="empty-state-icon">❌</div>
+                    <p>Error loading patients: ${error.message}</p>
+                `;
+            }
+        }
+
+        function viewPatientRecords(mrn) {
+            // Switch to EMR tab and load the patient
+            document.getElementById('emrMrnSearch').value = mrn;
+            switchTab('emr');
+            loadPatientRecords();
+        }
+
+        // ==================== UPLOAD TAB ====================
         
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // Show loading
-            document.getElementById('loading').classList.add('show');
-            document.getElementById('resultBox').classList.remove('show');
+            document.getElementById('uploadLoading').classList.add('show');
+            document.getElementById('uploadResultBox').classList.remove('show');
             
-            // Gather form data
             const formData = new FormData(e.target);
             const data = {
                 first_name: formData.get('first_name'),
@@ -346,84 +982,278 @@ Patient presents with...
                 athena_mrn: formData.get('athena_mrn'),
                 birth_sex: formData.get('birth_sex') || null,
                 race: formData.get('race') || null,
-                transcript_title: formData.get('transcript_title') || 'PlaudAI Voice Note',
-                raw_transcript: formData.get('transcript_text')  // <-- CHANGED
+                record_category: formData.get('record_category'),
+                record_subtype: formData.get('record_subtype') || null,
+                transcript_title: formData.get('transcript_title') || null,
+                raw_transcript: formData.get('transcript_text'),
+                plaud_note: formData.get('transcript_text')
             };
             
             try {
                 const response = await fetch(`${API_BASE}/upload`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
                 
                 const result = await response.json();
+                document.getElementById('uploadLoading').classList.remove('show');
                 
-                // Hide loading
-                document.getElementById('loading').classList.remove('show');
-                
-                // Show result
-                const resultBox = document.getElementById('resultBox');
-                const resultContent = document.getElementById('resultContent');
-                const resultTitle = document.getElementById('resultTitle');
-                const tagList = document.getElementById('tagList');
-                
+                const resultBox = document.getElementById('uploadResultBox');
                 resultBox.classList.add('show');
                 
                 if (response.ok) {
                     resultBox.classList.add('success');
                     resultBox.classList.remove('error');
-                    resultTitle.textContent = '✅ Upload Successful';
+                    document.getElementById('uploadResultTitle').textContent = '✅ Upload Successful';
                     
                     let message = `Patient ID: ${result.patient_id}\n`;
-                    message += `Transcript ID: ${result.transcript_id}\n`;
-                    message += `Confidence Score: ${(result.confidence_score * 100).toFixed(1)}%\n`;
-                    message += `Tags Found: ${result.tags.length}\n`;
+                    message += `Record ID: ${result.transcript_id}\n`;
+                    message += `Category: ${data.record_category.replace('_', ' ').toUpperCase()}\n`;
+                    message += `Confidence: ${(result.confidence_score * 100).toFixed(1)}%\n`;
+                    message += `Tags: ${result.tags.length}\n`;
                     
                     if (result.warnings && result.warnings.length > 0) {
                         message += `\n⚠️ Warnings:\n${result.warnings.join('\n')}`;
                     }
                     
-                    resultContent.textContent = message;
-                    
-                    // Display tags
-                    tagList.innerHTML = result.tags.map(tag => 
+                    document.getElementById('uploadResultContent').textContent = message;
+                    document.getElementById('tagList').innerHTML = result.tags.map(tag => 
                         `<span class="tag">${tag}</span>`
                     ).join('');
                     
+                    currentPatientId = result.patient_id;
                 } else {
                     resultBox.classList.add('error');
                     resultBox.classList.remove('success');
-                    resultTitle.textContent = '❌ Upload Failed';
-                    resultContent.textContent = result.detail || 'Unknown error occurred';
-                    tagList.innerHTML = '';
+                    document.getElementById('uploadResultTitle').textContent = '❌ Upload Failed';
+                    document.getElementById('uploadResultContent').textContent = result.detail || 'Unknown error';
+                    document.getElementById('tagList').innerHTML = '';
                 }
-                
             } catch (error) {
-                document.getElementById('loading').classList.remove('show');
-                
-                const resultBox = document.getElementById('resultBox');
+                document.getElementById('uploadLoading').classList.remove('show');
+                const resultBox = document.getElementById('uploadResultBox');
                 resultBox.classList.add('show', 'error');
-                resultBox.classList.remove('success');
-                document.getElementById('resultTitle').textContent = '❌ Connection Error';
-                document.getElementById('resultContent').textContent = 
-                    `Cannot connect to server at ${API_BASE}\n\nError: ${error.message}\n\nPlease ensure the backend is running.`;
-                document.getElementById('tagList').innerHTML = '';
+                document.getElementById('uploadResultTitle').textContent = '❌ Connection Error';
+                document.getElementById('uploadResultContent').textContent = `Error: ${error.message}`;
             }
         });
         
-        function clearForm() {
+        function clearUploadForm() {
             document.getElementById('uploadForm').reset();
-            document.getElementById('resultBox').classList.remove('show');
+            document.getElementById('uploadResultBox').classList.remove('show');
         }
         
-        // Auto-resize textarea
-        document.getElementById('transcriptText').addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = this.scrollHeight + 'px';
-        });
-    </script>
+        // ==================== EMR TAB ====================
+        
+        function handleEmrSearchEnter(event) {
+            if (event.key === 'Enter') loadPatientRecords();
+        }
+        
+        async function loadPatientRecords() {
+            const mrn = document.getElementById('emrMrnSearch').value.trim();
+            
+            if (!mrn) {
+                alert('Please enter a patient MRN');
+                return;
+            }
+            
+            document.getElementById('emrLoading').classList.add('show');
+            document.getElementById('emrEmptyState').style.display = 'none';
+            document.getElementById('emrContainer').style.display = 'none';
+            
+            try {
+                const searchRes = await fetch(`${API_BASE}/patients?search=${mrn}&limit=1`);
+const patients = await searchRes.json();
+            if (patients.length === 0) {
+                alert('No patient found with that MRN');
+                document.getElementById('emrLoading').classList.remove('show');
+                document.getElementById('emrEmptyState').style.display = 'block';
+                return;
+            }
+            
+            currentPatientId = patients[0].id;
+            
+            const chartRes = await fetch(`${API_BASE}/patients/${currentPatientId}/emr-chart`);
+            const chartData = await chartRes.json();
+            
+            document.getElementById('emrPatientName').textContent = chartData.patient.name;
+            document.getElementById('emrPatientMrn').textContent = chartData.patient.mrn;
+            document.getElementById('emrPatientDob').textContent = chartData.patient.dob;
+            document.getElementById('emrPatientAge').textContent = chartData.patient.age + ' years';
+            
+            allRecords = [
+                ...chartData.operative_notes.map(r => ({...r, category: 'operative_note'})),
+                ...chartData.imaging.map(r => ({...r, category: 'imaging'})),
+                ...chartData.lab_results.map(r => ({...r, category: 'lab_result'})),
+                ...chartData.office_visits.map(r => ({...r, category: 'office_visit'}))
+            ];
+            
+            document.getElementById('emrLoading').classList.remove('show');
+            document.getElementById('emrContainer').style.display = 'flex';
+            
+            filterRecords('all');
+        } catch (error) {
+            document.getElementById('emrLoading').classList.remove('show');
+            alert(`Error loading records: ${error.message}`);
+        }
+    }
+    
+    function filterRecords(category, event) {
+        currentCategory = category;
+        
+        if (event) {
+            document.querySelectorAll('.category-nav li').forEach(li => li.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+        
+        const filtered = category === 'all' 
+            ? allRecords 
+            : allRecords.filter(r => r.category === category);
+        
+        const container = document.getElementById('recordsDisplay');
+        
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>No records in this category</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = filtered.map(record => {
+            const categoryDisplay = (record.category || 'office_visit').replace('_', ' ').toUpperCase();
+            const badgeClass = `badge-${record.category}`;
+            const dateDisplay = record.date ? new Date(record.date).toLocaleDateString() : 'No date';
+            
+            return `
+                <div class="record-card ${record.category}" onclick='showRecordDetail(${JSON.stringify(record).replace(/'/g, "&apos;")})'>
+                    <div class="record-header">
+                        <div>
+                            <div class="record-title">${record.title}</div>
+                            ${record.subtype ? `<div style="color: #666; font-size: 14px; margin-top: 5px;">${record.subtype}</div>` : ''}
+                            <span class="category-badge ${badgeClass}">${categoryDisplay}</span>
+                        </div>
+                        <div class="record-date">${dateDisplay}</div>
+                    </div>
+                    <div class="record-summary">${record.summary || 'No summary available'}</div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // ==================== PDF DOWNLOAD FUNCTION ====================
+    
+    async function downloadPDF(transcriptId, recordTitle) {
+        try {
+            const loadingMsg = document.createElement('div');
+            loadingMsg.innerHTML = '<div class="spinner"></div><p style="margin-top: 10px;">Generating PDF...</p>';
+            loadingMsg.style.textAlign = 'center';
+            loadingMsg.style.padding = '20px';
+            document.getElementById('modalBody').prepend(loadingMsg);
+            
+            const response = await fetch(`${API_BASE}/generate-pdf/${transcriptId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            loadingMsg.remove();
+            
+            if (result.status === 'success') {
+                window.open(`${API_BASE}${result.pdf_url}`, '_blank');
+            } else {
+                alert('PDF generation failed: ' + (result.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert(`Error generating PDF: ${error.message}`);
+        }
+    }
+    
+    // ==================== SHOW RECORD DETAIL WITH PDF BUTTON ====================
+    
+    function showRecordDetail(record) {
+        document.getElementById('modalTitle').textContent = record.title;
+        document.getElementById('modalDate').textContent = record.date ? new Date(record.date).toLocaleDateString() : 'No date';
+        
+        let bodyHtml = `
+            <div style="margin-bottom: 20px;">
+                <button onclick="downloadPDF(${record.id}, '${record.title.replace(/'/g, "\\'")}')" 
+                        class="btn-pdf">
+                    📄 Download PDF
+                </button>
+            </div>
+            <h3>Clinical Summary</h3>
+            <div class="record-summary">${record.summary || 'No summary available'}</div>
+        `;
+        
+        if (record.structured_data && Object.keys(record.structured_data).length > 0 && !record.structured_data.error) {
+            bodyHtml += `
+                <h3 style="margin-top: 25px;">Structured Data</h3>
+                <div class="structured-data">${JSON.stringify(record.structured_data, null, 2)}</div>
+            `;
+        }
+        
+        document.getElementById('modalBody').innerHTML = bodyHtml;
+        document.getElementById('recordModal').classList.add('show');
+    }
+    
+    function closeModal() {
+        document.getElementById('recordModal').classList.remove('show');
+    }
+    
+    document.getElementById('recordModal').addEventListener('click', function(e) {
+        if (e.target === this) closeModal();
+    });
+    
+    // ==================== QUERY TAB ====================
+    
+    function handleQueryEnter(event) {
+        if (event.key === 'Enter') submitQuery();
+    }
+    
+    function setQuery(queryTemplate) {
+        document.getElementById('clinicalQuery').value = queryTemplate;
+        document.getElementById('clinicalQuery').focus();
+    }
+    
+    async function submitQuery() {
+        const query = document.getElementById('clinicalQuery').value.trim();
+        
+        if (!query) {
+            alert('Please enter a question');
+            return;
+        }
+        
+        document.getElementById('queryLoading').classList.add('show');
+        document.getElementById('patientInfoBox').classList.remove('show');
+        document.getElementById('clinicalResponse').classList.remove('show');
+        
+        try {
+            const response = await fetch(`${API_BASE}/clinical/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            });
+            
+            const result = await response.json();
+            document.getElementById('queryLoading').classList.remove('show');
+            
+            if (result.status === 'success') {
+                document.getElementById('patientName').textContent = result.patient.name;
+                document.getElementById('patientMrn').textContent = result.patient.mrn;
+                document.getElementById('patientInfoBox').classList.add('show');
+                document.getElementById('responseText').textContent = result.response;
+                document.getElementById('clinicalResponse').classList.add('show');
+            } else {
+                alert(result.message || 'Could not find patient information');
+            }
+        } catch (error) {
+            document.getElementById('queryLoading').classList.remove('show');
+            alert(`Error: ${error.message}`);
+        }
+    }
+</script>
 </body>
 </html>

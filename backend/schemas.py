@@ -46,6 +46,11 @@ class TranscriptUpload(TranscriptBase):
     dob: date
     athena_mrn: str
     
+    # ✅ ADD THESE THREE NEW LINES
+    record_category: Optional[str] = "office_visit"  # operative_note, imaging, lab_result, office_visit
+    record_subtype: Optional[str] = None  # e.g., "CT Abdomen", "Carotid Duplex"
+    
+    
     # Optional patient demographics
     birth_sex: Optional[str] = None
     race: Optional[str] = None

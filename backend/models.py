@@ -41,7 +41,10 @@ class VoiceTranscript(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
-    
+     # ✅ ADD THESE THREE NEW LINES
+    record_category = Column(String(50), index=True)  # operative_note, imaging, lab_result, office_visit
+    record_subtype = Column(String(100))  # e.g., "CT Abdomen", "Carotid Duplex"
+    category_specific_data = Column(JSON)  # Category-specific parsed data
     # PlaudAI specific data
     plaud_recording_id = Column(String(100))  # Original PlaudAI recording ID
     raw_transcript = Column(Text, nullable=False)  # Raw voice-to-text transcript
