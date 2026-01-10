@@ -1,6 +1,160 @@
 """
-PlaudAI Uploader - Text Parsing & Segmentation Service
-Enhanced with PVI Registry field extraction
+=============================================================================
+TEXT PARSING & SEGMENTATION SERVICE
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    This module is the LOCAL EXTRACTION ENGINE - a rule-based NLP pipeline
+    that extracts structured clinical data from unstructured voice transcripts
+    WITHOUT requiring external API calls. It runs entirely on the server.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                  PlaudAI Voice Recording                           │
+    │                          ▼                                         │
+    │              Raw Voice-to-Text Transcript                          │
+    └────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   parser.py (THIS FILE)                            │
+    │                                                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            segment_summary()                                  │ │
+    │  │  Input: "## Chief Complaint\nPain in left leg..."           │ │
+    │  │  Output: {"Chief Complaint": "Pain in left leg..."}         │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            generate_tags()                                    │ │
+    │  │  Input: "Patient has PAD with claudication..."              │ │
+    │  │  Output: ["pad", "claudication", "femoral"]                 │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            extract_pvi_fields()                               │ │
+    │  │  Input: "ABI: 0.6, Rutherford 4, SFA stent..."              │ │
+    │  │  Output: {preop_abi: 0.6, rutherford_status: "4", ...}      │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            calculate_confidence_score()                       │ │
+    │  │  Factors: text length, field count, critical fields         │ │
+    │  │  Output: 0.0 - 1.0 confidence score                         │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │               VoiceTranscript (Database Model)                     │
+    │  tags, confidence_score → stored for search/filtering             │
+    │  PVI fields → used to create PVIProcedure record                  │
+    └────────────────────────────────────────────────────────────────────┘
+
+CRITICAL DESIGN PRINCIPLES:
+
+    1. OFFLINE-CAPABLE EXTRACTION:
+       Unlike category_parser.py (uses Gemini), this module runs locally.
+       - No API calls, no latency, no cost
+       - Works without internet connection
+       - Deterministic output (same input = same output)
+
+    2. KEYWORD-BASED TAG GENERATION:
+       Uses predefined medical vocabulary maps:
+       - Vascular conditions (PAD, CLI, claudication)
+       - Anatomical locations (femoral, popliteal, tibial)
+       - Procedures (angioplasty, stent, atherectomy)
+       - Findings (occlusion, stenosis, dissection)
+       - Complications (perforation, hemorrhage)
+
+    3. REGEX-BASED VALUE EXTRACTION:
+       Clinical values extracted via pattern matching:
+       - ABI: r"abi\s*[:=]?\s*(\d+\.?\d*)"
+       - Rutherford: r"rutherford\s+(?:class|category|stage)?\s*(\d+)"
+       - Contrast: r"contrast\s+(?:volume\s+)?(\d+)\s*(?:ml|cc)"
+
+    4. PVI REGISTRY COMPLIANCE:
+       Extracts fields matching SVS (Society for Vascular Surgery) specs:
+       - Smoking history (Never/Former/Current)
+       - Rutherford classification (0-6)
+       - ABI/TBI measurements
+       - Access site
+       - Arteries treated
+       - Complications
+
+FUNCTION REFERENCE:
+
+    segment_summary(summary: str) -> Dict[str, str]
+        PARAMS: Markdown-formatted transcript with ## headers
+        RETURNS: Dictionary mapping section titles to content
+        PATTERN: Splits on "## Section Name" markdown headers
+        EXAMPLE: "## Chief Complaint\nPain" → {"Chief Complaint": "Pain"}
+
+    generate_tags(text: str) -> List[str]
+        PARAMS: Raw transcript text
+        RETURNS: Sorted list of unique medical tags
+        VOCABULARY: ~35 vascular-specific tag categories
+        EXAMPLE: "Patient has PAD" → ["pad"]
+
+    extract_pvi_fields(text: str) -> Dict[str, any]
+        PARAMS: Raw transcript text
+        RETURNS: Dictionary of PVI registry fields
+        FIELDS: smoking_history, rutherford_status, preop_abi, preop_tbi,
+                creatinine, contrast_volume, arteries_treated, access_site,
+                tasc_grade, complications
+        TYPES: Mix of strings, floats, and lists
+
+    calculate_confidence_score(text: str, extracted_fields: Dict) -> float
+        PARAMS: Text and extracted fields
+        RETURNS: Score from 0.0 to 1.0
+        FACTORS:
+          - Text length: +0.1 (>100 words) to +0.3 (>500 words)
+          - Field count: +0.2 (>2 fields) to +0.4 (>10 fields)
+          - Critical fields: +0.3 * (present / 4)
+        CRITICAL: rutherford_status, preop_abi, arteries_treated, access_site
+
+    process_transcript(transcript_text: str) -> Tuple[Dict, List, Dict, float]
+        PARAMS: Full transcript text
+        RETURNS: (sections, tags, pvi_fields, confidence)
+        ORCHESTRATOR: Calls all above functions in pipeline
+
+REGEX PATTERNS (key examples):
+
+    MRN Patterns:
+    - r"abi\s*[:=]?\s*(\d+\.?\d*)" → Captures ABI value
+    - r"rutherford\s+(?:class|category|stage)?\s*(\d+)" → Rutherford class
+    - r"contrast\s+(?:volume\s+)?(\d+)\s*(?:ml|cc)" → Contrast volume
+
+    Artery Patterns:
+    - r"(?:right|left|bilateral)?\s*(?:common\s+)?femoral"
+    - r"(?:right|left|bilateral)?\s*sfa"
+    - r"(?:right|left|bilateral)?\s*popliteal"
+    - r"(?:right|left|bilateral)?\s*(?:anterior|posterior)\s+tibial"
+
+LIMITATIONS:
+    - Keyword matching only (no semantic understanding)
+    - English language only
+    - Limited to predefined vocabulary
+    - Cannot handle misspellings or abbreviation variations
+    - False positives possible (e.g., "not claudication" → tags claudication)
+
+MAINTENANCE NOTES:
+    - Add new keywords to tag_keywords dictionary
+    - Add new value patterns to extract_pvi_fields()
+    - Test regex patterns with representative samples
+    - Consider adding negation handling (NLP improvement)
+
+PERFORMANCE:
+    - O(n) where n = text length
+    - Typical processing time: <10ms per transcript
+    - Memory: Minimal (no model loading)
+
+VERSION: 2.0.0 (PVI Registry Enhanced)
+LAST UPDATED: 2025-12
+=============================================================================
 """
 import re
 from typing import Dict, List, Tuple

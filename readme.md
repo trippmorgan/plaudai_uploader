@@ -8,721 +8,1030 @@ An intelligent medical documentation platform that imports voice transcripts, au
 
 ---
 
-## 📋 Table of Contents
+## Quick Start (For Beginners)
 
-1. [Features](#features)
-2. [Quick Start](#quick-start)
-3. [Project Structure](#project-structure)
-4. [Installation](#installation)
-5. [Configuration](#configuration)
-6. [Usage](#usage)
-7. [API Documentation](#api-documentation)
-8. [PVI Registry Integration](#pvi-registry-integration)
-9. [Deployment](#deployment)
-10. [Architecture](#architecture)
-11. [Contributing](#contributing)
+**What is this?** A web app that helps doctors turn voice recordings into organized medical notes.
 
----
-
-## ✨ Features
-
-### Core Functionality
-- 📝 **Smart Text Parsing** - Automatically segments markdown-formatted transcripts
-- 🏷️ **Medical Tagging** - Identifies vascular procedures, anatomical locations, findings
-- 📊 **PVI Registry Compliance** - Extracts SVS VQI peripheral vascular intervention fields
-- 🎯 **Confidence Scoring** - Rates extraction quality (0-100%)
-- 👥 **Patient Management** - Auto-creates/updates patient records by Athena MRN
-- 🔄 **Batch Upload** - Process multiple transcripts at once
-- 🔍 **Search & Query** - Find patients, transcripts, procedures
-
-### Technical Features
-- ⚡ **FastAPI Backend** - Modern, async Python web framework
-- 🗄️ **PostgreSQL Integration** - Connects to existing SCC database
-- 🎨 **Simple Web UI** - Clean HTML/JS interface for manual uploads
-- 🔌 **REST API** - Full programmatic access
-- 📈 **Scalable** - Multi-worker support for production
-- 🛡️ **Production Ready** - systemd service, nginx integration
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.8+
-- PostgreSQL 12+ (already running on server1-70TR000LUX)
-- Access to `surgical_command_center` database
-
-### 1. Clone/Create Project
-
-```bash
-mkdir -p /opt/plaudai_uploader
-cd /opt/plaudai_uploader
-```
-
-Or for development:
 ```bash
 cd ~/plaudai_uploader
 conda activate plaudai
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
 ```
 
-### 2. Install Dependencies
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 3. Configure Environment
-
-```bash
-cp .env.example .env
-nano .env  # Update DB_PASSWORD and other settings
-```
-
-### 4. Start Server
-
-```bash
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 5. Access UI
-
-Open browser: `http://localhost:8001/docs` (API docs)
-Or: Open `frontend/index.html` in browser
-http://100.75.237.36:8001/index.html
+Open browser: `http://100.75.237.36:8001/index.html`
 
 ---
 
-## 📁 Project Structure
+## Architecture Overview (Why Port 8001?)
+
+This application uses a **single-server monolithic architecture**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         BROWSER                                          │
+│  User visits: http://100.75.237.36:8001/index.html                      │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                              │
+                              │ (1) HTTP GET /index.html
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    FastAPI Server (Port 8001)                            │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐│
+│  │ SERVES BOTH:                                                         ││
+│  │                                                                      ││
+│  │  1. STATIC FILES (Frontend)          2. REST API (Backend)          ││
+│  │     /index.html ← WebUI                 /upload ← Transcripts       ││
+│  │     /static/* ← CSS/JS                  /patients ← Patient data    ││
+│  │                                          /ingest/athena ← EMR data   ││
+│  │                                          /clinical/query ← AI chat   ││
+│  └─────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────┬───────────────────────────────────────────┘
+                              │
+                              │ (2) Frontend JavaScript calls API
+                              │     API_BASE = 'http://100.75.237.36:8001'
+                              │     (defined in frontend/index.html:861)
+                              ▼
+                    ┌─────────────────┐
+                    │   PostgreSQL    │
+                    │   Port 5432     │
+                    └─────────────────┘
+```
+
+**Why this design?**
+
+| Aspect | Explanation |
+|--------|-------------|
+| **Single Port (8001)** | FastAPI serves both frontend HTML and backend API on the same port. No need for separate servers. |
+| **No CORS Issues** | Since frontend and API are on the same origin (same host:port), browsers don't block requests. |
+| **Simple Deployment** | One process to manage. No nginx reverse proxy needed for development. |
+| **API_BASE Hardcoded** | The frontend's `API_BASE` in `frontend/index.html:861` points to `http://100.75.237.36:8001` - this is the server's Tailscale IP. |
+
+**Key Configuration Points:**
+- **Backend port**: `8001` (set in uvicorn startup command)
+- **Frontend API target**: `http://100.75.237.36:8001` (hardcoded in `frontend/index.html:861`)
+- **If port changes**: Must update BOTH the startup command AND `API_BASE` in index.html
+
+---
+
+# Technical Documentation
+
+## Table of Contents
+
+1. [System Architecture](#system-architecture)
+2. [Data Flow Model](#data-flow-model)
+3. [Component Reference](#component-reference)
+4. [Security Model](#security-model)
+5. [Database Schema](#database-schema)
+6. [API Reference](#api-reference)
+7. [Integration Patterns](#integration-patterns)
+8. [Maintenance Guide](#maintenance-guide)
+
+---
+
+## System Architecture
+
+### High-Level Architecture Diagram
+
+```
+                                    ALBANY VASCULAR AI CLINICAL SYSTEM
+    ┌──────────────────────────────────────────────────────────────────────────────────────┐
+    │                                                                                      │
+    │  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────────────────────┐│
+    │  │                 │     │                 │     │                                 ││
+    │  │  ATHENA EMR     │────▶│  ATHENA-SCRAPER │────▶│  PLAUDAI INGESTION SERVICE     ││
+    │  │  (External)     │     │  (Chrome Ext)   │     │  POST /ingest/athena           ││
+    │  │                 │     │                 │     │                                 ││
+    │  └─────────────────┘     └─────────────────┘     └───────────────┬─────────────────┘│
+    │                                                                   │                  │
+    │  ┌─────────────────┐                                             │                  │
+    │  │                 │                                             ▼                  │
+    │  │  PLAUDAI VOICE  │     ┌─────────────────┐     ┌─────────────────────────────────┐│
+    │  │  RECORDER       │────▶│  TRANSCRIPT     │────▶│  CLINICAL EVENT PROCESSOR      ││
+    │  │  (External)     │     │  UPLOAD API     │     │  - Auto-link by MRN            ││
+    │  │                 │     │  POST /upload   │     │  - Idempotency deduplication   ││
+    │  └─────────────────┘     └─────────────────┘     │  - HIPAA audit logging         ││
+    │                                                   └───────────────┬─────────────────┘│
+    │                                                                   │                  │
+    │  ┌─────────────────┐     ┌─────────────────┐                     │                  │
+    │  │                 │     │                 │                     ▼                  │
+    │  │  WEB FRONTEND   │◀───▶│  FASTAPI        │     ┌─────────────────────────────────┐│
+    │  │  (HTML/JS)      │     │  REST API       │◀───▶│  POSTGRESQL DATABASE           ││
+    │  │                 │     │                 │     │  surgical_command_center       ││
+    │  └─────────────────┘     └─────────────────┘     │                                 ││
+    │                                                   │  Tables:                        ││
+    │  ┌─────────────────┐     ┌─────────────────┐     │  - patients                     ││
+    │  │                 │     │                 │     │  - voice_transcripts            ││
+    │  │  GEMINI AI      │◀───▶│  CLINICAL QUERY │     │  - clinical_synopses            ││
+    │  │  (Google)       │     │  SERVICE        │     │  - pvi_procedures               ││
+    │  │                 │     │                 │     │  - clinical_events              ││
+    │  └─────────────────┘     └─────────────────┘     │  - structured_findings          ││
+    │                                                   │  - integration_audit_log        ││
+    │                                                   └─────────────────────────────────┘│
+    └──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Architectural Principles
+
+| Principle | Implementation | Rationale |
+|-----------|----------------|-----------|
+| **Separation of Concerns** | Routes, Services, Models layers | Maintainability, testability |
+| **Idempotency** | SHA256 hash-based deduplication | Prevents duplicate clinical data |
+| **Append-Only Events** | Clinical events never modified | Audit trail, HIPAA compliance |
+| **Auto-Linking** | MRN-based patient matching | Data integrity across systems |
+| **Graceful Degradation** | JSONL fallback in Athena-Scraper | Resilience to network failures |
+
+### Design Decisions
+
+1. **FastAPI over Flask**: Async support, automatic OpenAPI docs, Pydantic validation
+2. **SQLAlchemy ORM**: Type safety, relationship management, migration support
+3. **PostgreSQL**: JSONB for flexible payloads, robust indexing, ACID compliance
+4. **Stateless API**: Horizontal scaling capability, no session management
+5. **File-based Logging**: Persistent audit trail, grep-able diagnostics
+
+---
+
+## Data Flow Model
+
+### Primary Data Flows
+
+#### Flow 1: Athena EMR → PlaudAI (Real-time Clinical Data)
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ Athena EMR   │───▶│ Chrome Ext   │───▶│ POST         │───▶│ clinical_    │
+│ API Response │    │ Intercepts   │    │ /ingest/     │    │ events       │
+│              │    │ XHR Data     │    │ athena       │    │ table        │
+└──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Auto-Link    │
+                                        │ by MRN to    │
+                                        │ patients.id  │
+                                        └──────────────┘
+```
+
+**Data Transformation:**
+```python
+# Input (from Athena-Scraper)
+{
+    "athena_patient_id": "18889107",      # MRN
+    "event_type": "medication",
+    "payload": {"name": "Aspirin", ...},
+    "captured_at": "2025-12-28T10:00:00Z"
+}
+
+# Processing
+1. Generate idempotency_key = SHA256(patient_id + event_type + payload)
+2. Check for duplicate (skip if exists)
+3. Query patients WHERE athena_mrn = athena_patient_id
+4. Set patient_id foreign key if match found
+5. Insert into clinical_events
+6. Log to integration_audit_log
+```
+
+#### Flow 2: Voice Transcript → Structured Data
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ PlaudAI      │───▶│ POST         │───▶│ Parser       │───▶│ voice_       │
+│ Transcript   │    │ /upload      │    │ Service      │    │ transcripts  │
+│ (Markdown)   │    │              │    │              │    │ table        │
+└──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Gemini AI    │───▶ clinical_synopses
+                                        │ Synopsis     │───▶ pvi_procedures
+                                        └──────────────┘
+```
+
+### Event Processing Pipeline
+
+```python
+# Idempotency Key Generation
+def generate_idempotency_key(patient_id: str, event_type: str, payload: dict) -> str:
+    """
+    Creates deterministic hash for deduplication.
+
+    Algorithm:
+        1. Sort payload keys for consistent ordering
+        2. Concatenate: "{patient_id}:{event_type}:{json_payload}"
+        3. Apply SHA256, take first 64 characters
+
+    Properties:
+        - Same input always produces same output
+        - Different payloads produce different keys
+        - Collision probability: ~10^-77
+    """
+    payload_str = json.dumps(payload, sort_keys=True)
+    raw = f"{patient_id}:{event_type}:{payload_str}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:64]
+```
+
+---
+
+## Component Reference
+
+### Directory Structure
 
 ```
 plaudai_uploader/
-│
-├── backend/                      # FastAPI application
-│   ├── __init__.py
-│   ├── config.py                 # Environment configuration
-│   ├── db.py                     # Database connection
-│   ├── models.py                 # SQLAlchemy ORM models
-│   ├── schemas.py                # Pydantic validation schemas
-│   ├── main.py                   # FastAPI app & routes
+├── backend/
+│   ├── main.py              # FastAPI application entry point
+│   ├── config.py            # Environment configuration loader
+│   ├── db.py                # Database connection and session management
+│   ├── models.py            # Core SQLAlchemy ORM models
+│   ├── models_athena.py     # Athena integration models
+│   ├── schemas.py           # Pydantic request/response schemas
+│   ├── logging_config.py    # Structured logging configuration
+│   ├── routes/
+│   │   ├── __init__.py
+│   │   └── ingest.py        # Athena ingestion endpoints
 │   └── services/
-│       ├── __init__.py
-│       ├── parser.py             # Text parsing & tagging
-│       └── uploader.py           # Upload business logic
-│
+│       ├── uploader.py      # Transcript processing logic
+│       ├── parser.py        # Text parsing and tagging
+│       ├── gemini_parser.py # AI-powered extraction
+│       ├── gemini_synopsis.py # Clinical synopsis generation
+│       ├── clinical_query.py  # Natural language queries
+│       ├── category_parser.py # Record categorization
+│       └── pdf_generator.py   # PDF report generation
 ├── frontend/
-│   └── index.html                # Web UI for uploads
-│
-├── logs/                         # Application logs
-│   └── plaudai_uploader.log
-│
-├── requirements.txt              # Python dependencies
-├── .env.example                  # Environment template
-├── .env                          # Your actual config (not in git)
-├── README.md                     # This file
-├── DEPLOYMENT.md                 # Deployment guide
-└── ARCHITECTURE.md               # Architecture documentation
+│   └── index.html           # Web user interface
+├── migrations/
+│   └── add_athena_tables.sql # Database migration scripts
+├── logs/
+│   └── plaudai_uploader.log # Application logs
+├── .env                     # Environment configuration (not in git)
+├── .env.example             # Environment template
+├── .gitignore               # Git exclusions
+├── requirements.txt         # Python dependencies
+└── readme.md                # This documentation
 ```
+
+### Component Details
 
 ---
 
-## 🔧 Installation
+### `backend/main.py`
 
-### Development Environment
+**Architectural Role:** Application entry point and HTTP request orchestrator
 
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+**Position in Data Flow:** Entry point for all HTTP requests
 
-# Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
+**Critical Design Principles:**
+- Lifespan management for database connections
+- Middleware chain for CORS, logging, error handling
+- Route registration with prefix organization
 
-# Copy environment template
-cp .env.example .env
-
-# Edit configuration
-nano .env
-```
-
-### Production Environment (server1-70TR000LUX)
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions including:
-- systemd service setup
-- Nginx reverse proxy
-- SSL/TLS configuration
-- Firewall rules
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables (.env)
-
-```bash
-# Database
-DB_HOST=server1-70TR000LUX    # PostgreSQL server
-DB_PORT=5432
-DB_NAME=surgical_command_center
-DB_USER=postgres
-DB_PASSWORD=your_secure_password
-
-# API Server
-API_HOST=0.0.0.0
-API_PORT=8000
-DEBUG=True                     # False in production
-
-# Optional: Gemini AI
-GOOGLE_API_KEY=your_api_key    # For enhanced tagging
-
-# Features
-PVI_ENABLED=True               # Enable PVI registry fields
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=logs/plaudai_uploader.log
-```
-
-### Database Connection
-
-The app connects to your existing `surgical_command_center` database and creates these tables:
-- `patients` (enhanced with PVI demographics)
-- `voice_transcripts`
-- `pvi_procedures`
-
-**Important**: These tables are additive and don't conflict with existing SCC tables.
-
----
-
-## 💡 Usage
-
-### Web Interface
-
-1. Open `frontend/index.html` in a browser
-2. Fill in patient information:
-   - First Name, Last Name
-   - Date of Birth
-   - Athena MRN (required - used for deduplication)
-3. Paste PlaudAI transcript
-4. Click "Upload Transcript"
-5. Review results: tags, confidence score, warnings
-
-### API Usage (Python)
+**Key Functions:**
 
 ```python
-import requests
-
-# Upload transcript
-response = requests.post('http://localhost:8000/upload', json={
-    "first_name": "John",
-    "last_name": "Doe",
-    "dob": "1960-05-15",
-    "athena_mrn": "MRN123456",
-    "transcript_text": """
-## Chief Complaint
-Patient presents with right leg claudication
-
-## Physical Exam
-Diminished right femoral pulse
-
-## Assessment
-Peripheral arterial disease, likely right SFA stenosis
-Rutherford category 3
-
-## Plan
-Proceed with right lower extremity angiogram
-Consider angioplasty vs stenting
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-})
+    Application lifecycle manager.
 
-result = response.json()
-print(f"Patient ID: {result['patient_id']}")
-print(f"Tags: {result['tags']}")
-print(f"Confidence: {result['confidence_score']:.1%}")
+    Startup:
+        - Initialize database connection pool
+        - Create tables if not exist
+        - Verify connectivity
+
+    Shutdown:
+        - Close database connections gracefully
+        - Flush pending logs
+
+    Raises:
+        SystemExit: If database connection fails
+    """
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Request/response logging middleware.
+
+    Parameters:
+        request: Incoming HTTP request
+        call_next: Next middleware in chain
+
+    Returns:
+        Response with timing headers
+
+    Logs:
+        - Request ID (UUID)
+        - Method and path
+        - Response status
+        - Processing time (ms)
+    """
 ```
 
-### API Usage (cURL)
+**Security Considerations:**
+- CORS configured for development (allows all origins)
+- No authentication middleware (TODO for production)
+- Request IDs for audit trail correlation
 
-```bash
-# Upload transcript
-curl -X POST http://localhost:8000/upload \
-  -H "Content-Type: application/json" \
-  -d '{
-    "first_name": "Jane",
-    "last_name": "Smith",
-    "dob": "1975-08-20",
-    "athena_mrn": "MRN789012",
-    "transcript_text": "Bilateral femoral artery stenosis..."
-  }'
-
-# Get patient info
-curl http://localhost:8000/patients/1
-
-# Get patient's transcripts
-curl http://localhost:8000/patients/1/transcripts
-
-# Get statistics
-curl http://localhost:8000/stats
-```
+**Maintenance Notes:**
+- Add authentication middleware before production
+- Consider rate limiting for /ingest endpoints
+- Monitor response times in logs
 
 ---
 
-## 📚 API Documentation
+### `backend/db.py`
 
-### Endpoints
+**Architectural Role:** Database abstraction layer
 
-#### Health & Info
+**Position in Data Flow:** Provides session management for all database operations
 
-**GET /** - Health check
-```json
-{
-  "service": "Albany Vascular AI Clinical System",
-  "version": "2.0.0",
-  "status": "healthy",
-  "database": "connected"
-}
-```
+**Critical Design Principles:**
+- Connection pooling for performance
+- Session-per-request pattern
+- Automatic cleanup with context managers
 
-**GET /health** - Detailed health
-```json
-{
-  "status": "healthy",
-  "database": "healthy",
-  "timestamp": "2025-11-11T10:30:00"
-}
-```
+**Key Functions:**
 
-#### Upload
-
-**POST /upload** - Upload single transcript
-```json
-Request:
-{
-  "first_name": "John",
-  "last_name": "Doe",
-  "dob": "1960-05-15",
-  "athena_mrn": "MRN123456",
-  "transcript_text": "...",
-  "transcript_title": "Clinic Visit",
-  "birth_sex": "M",
-  "race": "White"
-}
-
-Response:
-{
-  "status": "success",
-  "patient_id": 1,
-  "transcript_id": 5,
-  "tags": ["pad", "femoral", "stenosis"],
-  "confidence_score": 0.85,
-  "warnings": []
-}
-```
-
-**POST /batch-upload** - Upload multiple transcripts
-```json
-Request:
-{
-  "items": [
-    {"patient_data": {...}, "transcript_text": "..."},
-    {"patient_data": {...}, "transcript_text": "..."}
-  ]
-}
-
-Response:
-{
-  "status": "completed",
-  "total": 2,
-  "successful": 2,
-  "failed": 0,
-  "results": [...]
-}
-```
-
-#### Query
-
-**GET /patients** - List patients
-- Query params: `search` (name or MRN), `limit` (default 50)
-
-**GET /patients/{id}** - Get specific patient
-
-**GET /patients/{id}/transcripts** - Get patient's transcripts
-
-**GET /patients/{id}/procedures** - Get patient's PVI procedures
-
-**GET /transcripts/{id}** - Get specific transcript
-
-**GET /stats** - Database statistics
-
-### Interactive API Docs
-
-Visit `http://localhost:8000/docs` for interactive Swagger UI documentation.
-
----
-
-## 🩺 PVI Registry Integration
-
-### Supported Fields
-
-PlaudAI Uploader automatically extracts PVI (Peripheral Vascular Intervention) registry fields from free text, following **SVS VQI (Society for Vascular Surgery Vascular Quality Initiative)** standards.
-
-#### Basic Information
-- Procedure date, surgeon name
-- Patient demographics (smoking, living status)
-
-#### Clinical History
-- **Rutherford Classification** (0-6)
-- Indication (acute vs chronic)
-- Prior interventions
-- Pre-op ABI/TBI
-- Comorbidities
-
-#### Procedure Details
-- Access site (femoral, radial, brachial)
-- Sheath size, closure method
-- Radiation exposure, contrast volume
-- Arteries treated (with laterality)
-- **TASC Grade** (A/B/C/D)
-- Treatment lengths
-
-#### Devices & Techniques
-- Angioplasty, stenting, atherectomy
-- Device details (brand, size)
-- Thrombectomy
-- Treatment success/failure
-
-#### Outcomes
-- Complications (dissection, perforation, etc.)
-- Disposition status
-- Discharge medications
-
-#### Follow-up
-- 30-day readmissions/reinterventions
-- Long-term follow-up (9-21 months)
-- Mortality tracking
-- Limb salvage data
-
-### Extraction Examples
-
-**Input Text:**
-```
-Patient underwent right common femoral to below-knee popliteal 
-bypass. Pre-op ABI was 0.45. Patient is a current smoker with 
-diabetes. Rutherford category 4. Used 6Fr sheath with Perclose 
-closure. No complications.
-```
-
-**Extracted Fields:**
 ```python
+def get_db() -> Generator[Session, None, None]:
+    """
+    Dependency injection for database sessions.
+
+    Yields:
+        Session: SQLAlchemy session bound to request lifecycle
+
+    Usage:
+        @app.get("/patients")
+        def get_patients(db: Session = Depends(get_db)):
+            return db.query(Patient).all()
+
+    Guarantees:
+        - Session closed after request completes
+        - Rollback on unhandled exceptions
+        - Connection returned to pool
+    """
+
+def init_db() -> None:
+    """
+    Initialize database schema.
+
+    Operations:
+        1. Test connection with SELECT 1
+        2. Create all tables via SQLAlchemy metadata
+        3. Log success or failure
+
+    Raises:
+        Exception: Logged and re-raised if connection fails
+
+    Idempotency:
+        Safe to call multiple times (uses CREATE IF NOT EXISTS)
+    """
+```
+
+**Configuration:**
+```python
+DATABASE_URL = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=5,           # Concurrent connections
+    max_overflow=10,       # Burst capacity
+    pool_pre_ping=True,    # Verify connections before use
+    echo=False             # SQL logging (True for debug)
+)
+```
+
+---
+
+### `backend/models.py`
+
+**Architectural Role:** Core domain models for patient data
+
+**Position in Data Flow:** ORM layer between services and PostgreSQL
+
+**Critical Design Principles:**
+- Single source of truth for schema
+- Relationship definitions for joined queries
+- Audit timestamps on all entities
+
+**Models:**
+
+```python
+class Patient(Base):
+    """
+    Patient demographic and identification record.
+
+    Attributes:
+        id (int): Primary key, auto-increment
+        first_name (str): Patient first name
+        last_name (str): Patient surname
+        dob (date): Date of birth (required for uniqueness)
+        athena_mrn (str): Athena Medical Record Number (unique, indexed)
+        birth_sex (str): M/F/Other
+        race (str): Demographic classification
+        zip_code (str): For geographic analysis
+        created_at (datetime): Record creation timestamp
+        updated_at (datetime): Last modification timestamp
+
+    Relationships:
+        transcripts: List[VoiceTranscript] - One-to-many
+        procedures: List[PVIProcedure] - One-to-many
+        synopses: List[ClinicalSynopsis] - One-to-many
+
+    Indexes:
+        - athena_mrn (unique): Fast lookup for Athena integration
+
+    Constraints:
+        - athena_mrn NOT NULL: Every patient must have MRN
+        - dob NOT NULL: Required for patient identification
+    """
+
+class VoiceTranscript(Base):
+    """
+    Voice recording transcript with parsed clinical data.
+
+    Attributes:
+        id (int): Primary key
+        patient_id (int): Foreign key to patients
+        raw_transcript (text): Original voice-to-text output
+        plaud_note (text): Formatted PlaudAI note
+        tags (json): Extracted medical tags
+        confidence_score (float): Parsing confidence 0.0-1.0
+        record_category (str): operative_note, imaging, etc.
+        category_specific_data (json): Category-dependent fields
+
+    Design Notes:
+        - raw_transcript preserved for audit/reprocessing
+        - tags stored as JSON array for flexible querying
+        - category_specific_data allows schema evolution
+    """
+
+class PVIProcedure(Base):
+    """
+    Peripheral Vascular Intervention registry data.
+
+    Follows SVS VQI (Vascular Quality Initiative) standards.
+
+    Key Field Groups:
+        - Demographics: smoking, comorbidities
+        - History: rutherford_status, prior_interventions
+        - Procedure: access_site, arteries_treated, devices
+        - Outcomes: complications, mortality
+        - Follow-up: 30-day, long-term (9-21 months)
+
+    Clinical Importance:
+        - rutherford_status: Claudication severity (0-6)
+        - preop_abi: Ankle-brachial index (<0.9 = PAD)
+        - tasc_grade: Lesion complexity (A-D)
+    """
+```
+
+---
+
+### `backend/models_athena.py`
+
+**Architectural Role:** Athena EMR integration data models
+
+**Position in Data Flow:** Storage layer for ingested Athena data
+
+**Critical Design Principles:**
+- Append-only event storage
+- Idempotency via unique hash keys
+- Optional patient linking (may ingest before patient exists)
+
+**Models:**
+
+```python
+class ClinicalEvent(Base):
+    """
+    Raw clinical data captured from Athena EMR.
+
+    Attributes:
+        id (str): UUID primary key
+        patient_id (int): FK to patients (nullable)
+        athena_patient_id (str): MRN from Athena
+        event_type (str): medication, problem, vital, lab, etc.
+        event_subtype (str): active, historical, etc.
+        raw_payload (json): Complete data from Athena
+        idempotency_key (str): SHA256 hash for deduplication
+        captured_at (datetime): When Athena sent data
+        ingested_at (datetime): When we stored it
+        confidence (float): Classification confidence
+
+    Indexes:
+        - athena_patient_id: Patient timeline queries
+        - event_type: Filter by category
+        - captured_at: Chronological ordering
+        - idempotency_key (unique): Duplicate prevention
+
+    Design Rationale:
+        - raw_payload never modified (source of truth)
+        - patient_id nullable for orphan events
+        - Composite index on (athena_patient_id, captured_at)
+    """
+
+class IntegrationAuditLog(Base):
+    """
+    HIPAA-compliant audit trail for all operations.
+
+    Attributes:
+        action (str): INGEST, PARSE, VIEW, EXPORT, ERROR
+        resource_type (str): clinical_event, patient, etc.
+        resource_id (str): ID of affected resource
+        details (json): Action-specific metadata
+        error_message (text): Error details if failed
+        actor (str): System or user identifier
+        ip_address (str): Client IP for access logs
+        timestamp (datetime): Action timestamp
+
+    Retention:
+        - Minimum 6 years per HIPAA requirements
+        - No deletion allowed (append-only)
+    """
+```
+
+---
+
+### `backend/routes/ingest.py`
+
+**Architectural Role:** Athena data ingestion API endpoints
+
+**Position in Data Flow:** Entry point for external clinical data
+
+**Critical Design Principles:**
+- Idempotent POST operations
+- Automatic patient linking
+- Comprehensive error handling
+
+**Endpoints:**
+
+```python
+@router.post("/athena", response_model=IngestResponse)
+async def ingest_athena_event(
+    payload: AthenaEventPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+) -> IngestResponse:
+    """
+    Receive and store clinical event from Athena-Scraper.
+
+    Parameters:
+        payload: AthenaEventPayload
+            - athena_patient_id (str): Patient MRN [required]
+            - event_type (str): Event category [required]
+            - event_subtype (str): Sub-category [optional]
+            - payload (dict): Raw Athena data [required]
+            - captured_at (str): ISO timestamp [required]
+            - source_endpoint (str): Athena API path [optional]
+            - confidence (float): Classification score [optional]
+
+        db: Database session (injected)
+
+    Returns:
+        IngestResponse:
+            - status: "success" | "duplicate" | "error"
+            - event_id: UUID of created/existing event
+            - message: Human-readable status
+
+    Processing Steps:
+        1. Generate idempotency key from payload
+        2. Check for existing event with same key
+        3. If duplicate: return existing event_id
+        4. Parse timestamp to datetime
+        5. Query patients table for MRN match
+        6. If found: set patient_id foreign key
+        7. Create ClinicalEvent record
+        8. Log to IntegrationAuditLog
+        9. Commit transaction
+        10. Return success response
+
+    Error Handling:
+        - Duplicate: 200 with status="duplicate"
+        - Validation: 422 with field details
+        - Database: 500 with error message
+        - All errors logged to audit table
+
+    Performance:
+        - Average: 30-50ms
+        - Bottleneck: Patient lookup query
+        - Optimization: Index on athena_mrn
+    """
+
+@router.get("/events/{athena_patient_id}")
+async def get_patient_events(
+    athena_patient_id: str,
+    event_type: Optional[str] = Query(None),
+    limit: int = Query(100, le=1000),
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Retrieve clinical events for a patient.
+
+    Parameters:
+        athena_patient_id: Patient MRN
+        event_type: Filter by category (optional)
+        limit: Maximum results (default 100, max 1000)
+
+    Returns:
+        {
+            "patient_id": str,
+            "count": int,
+            "events": [
+                {
+                    "id": str,
+                    "type": str,
+                    "subtype": str,
+                    "captured_at": str,
+                    "confidence": float,
+                    "payload_keys": List[str]
+                }
+            ]
+        }
+
+    Use Cases:
+        - Debugging ingestion pipeline
+        - Building patient timelines
+        - Verifying data completeness
+    """
+
+@router.get("/stats")
+async def get_ingestion_stats(db: Session = Depends(get_db)) -> dict:
+    """
+    Get aggregate ingestion statistics.
+
+    Returns:
+        {
+            "total_events": int,
+            "unique_patients": int,
+            "by_type": {
+                "medication": int,
+                "problem": int,
+                ...
+            }
+        }
+
+    Use Cases:
+        - Monitoring dashboard
+        - Capacity planning
+        - Integration health checks
+    """
+
+@router.get("/health")
+async def health_check() -> dict:
+    """
+    Service health check endpoint.
+
+    Returns:
+        {"status": "healthy", "service": "scc-ingest"}
+
+    Use Cases:
+        - Load balancer health probes
+        - Athena-Scraper connectivity check
+        - Monitoring systems
+    """
+```
+
+---
+
+## Security Model
+
+### Authentication & Authorization
+
+| Layer | Current State | Production Requirement |
+|-------|--------------|------------------------|
+| API Authentication | None | JWT Bearer tokens |
+| User Authorization | None | Role-based access control |
+| Service-to-Service | None | API key or mTLS |
+
+### Data Protection
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      SECURITY LAYERS                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TRANSPORT          HTTPS/TLS 1.3 (via nginx reverse proxy)    │
+│                                                                 │
+│  APPLICATION        Input validation (Pydantic schemas)        │
+│                     SQL injection prevention (SQLAlchemy ORM)  │
+│                     CORS restrictions                          │
+│                                                                 │
+│  DATA               PostgreSQL role-based access               │
+│                     Encrypted connections (sslmode=require)    │
+│                     Audit logging (integration_audit_log)      │
+│                                                                 │
+│  SECRETS            Environment variables (.env)               │
+│                     .gitignore exclusion                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### HIPAA Compliance Measures
+
+1. **Audit Logging**: All data access logged to `integration_audit_log`
+2. **Data Integrity**: Append-only event storage prevents modification
+3. **Access Controls**: Database credentials isolated in .env
+4. **Encryption**: TLS for transport, PostgreSQL encryption at rest
+5. **Minimum Necessary**: API returns only requested fields
+
+### Sensitive Data Handling
+
+```python
+# Files excluded from version control (.gitignore)
+.env                    # Database credentials, API keys
+logs/                   # May contain PHI in error messages
+*.log                   # Application logs
+__pycache__/            # Compiled Python (may contain secrets)
+```
+
+---
+
+## Database Schema
+
+### Entity Relationship Diagram
+
+```
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│    patients     │       │ voice_transcripts│      │ pvi_procedures  │
+├─────────────────┤       ├─────────────────┤       ├─────────────────┤
+│ id (PK)         │──┐    │ id (PK)         │       │ id (PK)         │
+│ first_name      │  │    │ patient_id (FK) │───┐   │ patient_id (FK) │──┐
+│ last_name       │  │    │ raw_transcript  │   │   │ procedure_date  │  │
+│ dob             │  │    │ tags            │   │   │ rutherford      │  │
+│ athena_mrn (UQ) │  │    │ confidence      │   │   │ arteries        │  │
+│ created_at      │  │    │ created_at      │   │   │ complications   │  │
+└─────────────────┘  │    └─────────────────┘   │   └─────────────────┘  │
+         │           │                          │                        │
+         │           └──────────────────────────┼────────────────────────┘
+         │                                      │
+         ▼                                      ▼
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│ clinical_events │       │clinical_synopses│       │structured_      │
+├─────────────────┤       ├─────────────────┤       │findings         │
+│ id (PK)         │       │ id (PK)         │       ├─────────────────┤
+│ patient_id (FK) │───────│ patient_id (FK) │       │ id (PK)         │
+│ athena_patient_ │       │ synopsis_text   │       │ patient_id (FK) │
+│   id            │       │ ai_model        │       │ finding_type    │
+│ event_type      │       │ created_at      │       │ value           │
+│ raw_payload     │       └─────────────────┘       │ source_event_id │
+│ idempotency_key │                                 └─────────────────┘
+│   (UQ)          │
+│ captured_at     │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│ integration_    │
+│ audit_log       │
+├─────────────────┤
+│ id (PK)         │
+│ action          │
+│ resource_type   │
+│ resource_id     │
+│ details         │
+│ timestamp       │
+└─────────────────┘
+```
+
+### Index Strategy
+
+```sql
+-- High-cardinality lookups
+CREATE INDEX ix_patients_athena_mrn ON patients(athena_mrn);
+CREATE INDEX ix_clinical_events_athena_patient ON clinical_events(athena_patient_id);
+
+-- Temporal queries
+CREATE INDEX ix_clinical_events_captured_at ON clinical_events(captured_at);
+CREATE INDEX ix_audit_log_timestamp ON integration_audit_log(timestamp);
+
+-- Composite for timeline queries
+CREATE INDEX ix_ce_patient_time ON clinical_events(athena_patient_id, captured_at);
+
+-- Deduplication
+CREATE UNIQUE INDEX ix_ce_idempotency ON clinical_events(idempotency_key);
+```
+
+---
+
+## API Reference
+
+### Base URL
+
+```
+Development: http://localhost:8001
+Production:  http://100.75.237.36:8001
+```
+
+### Endpoints Summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Service info and health |
+| GET | `/health` | Detailed health check |
+| POST | `/upload` | Upload transcript |
+| POST | `/batch-upload` | Batch upload |
+| GET | `/patients` | List/search patients |
+| GET | `/patients/{id}` | Get patient details |
+| GET | `/patients/{id}/emr-chart` | Get EMR chart data |
+| POST | `/ingest/athena` | Ingest Athena event |
+| GET | `/ingest/events/{mrn}` | Get patient events |
+| GET | `/ingest/clinical/{mrn}` | **NEW** Fetch all clinical data (bidirectional) |
+| GET | `/ingest/stats` | Ingestion statistics |
+| GET | `/ingest/health` | Ingestion service health |
+| POST | `/clinical/query` | Natural language query |
+
+### Request/Response Examples
+
+See `/docs` endpoint for interactive Swagger documentation.
+
+---
+
+## Integration Patterns
+
+### Athena-Scraper Integration
+
+```python
+# Athena-Scraper sends to PlaudAI
+POST /ingest/athena
+Content-Type: application/json
+
 {
-  "arteries_treated": ["right common femoral", "popliteal"],
-  "preop_abi": 0.45,
-  "smoking_history": "Current",
-  "rutherford_status": "Rutherford 4",
-  "access_site": "Common Femoral Artery",
-  "complications": []
+    "athena_patient_id": "18889107",
+    "event_type": "medication",
+    "event_subtype": "active",
+    "payload": {
+        "medication_name": "Aspirin",
+        "dose": "81mg",
+        "frequency": "daily"
+    },
+    "captured_at": "2025-12-28T10:00:00Z",
+    "source_endpoint": "/api/medications/active",
+    "confidence": 0.95,
+    "indexer_version": "2.0.0"
 }
 ```
 
-### Confidence Scoring
+### Response Handling
 
-The system calculates a confidence score (0-1.0) based on:
-- Text length and detail
-- Number of extracted fields
-- Presence of critical fields (Rutherford, ABI, arteries)
+```python
+# Success
+{"status": "success", "event_id": "uuid...", "message": "Event ingested"}
 
-**High Confidence (≥0.75)**: Detailed transcript with many structured fields
-**Medium Confidence (0.50-0.74)**: Some fields extracted, manual review recommended
-**Low Confidence (<0.50)**: Few fields extracted, significant manual review needed
+# Duplicate (idempotent - not an error)
+{"status": "duplicate", "event_id": "uuid...", "message": "Already ingested"}
+
+# Validation Error
+HTTP 422
+{"detail": [{"loc": ["body", "athena_patient_id"], "msg": "required"}]}
+```
+
+### Bidirectional Integration (Phase 3 - NEW)
+
+**Purpose:** Enable Athena-Scraper to fetch stored clinical data when a patient is opened.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                       BIDIRECTIONAL DATA FLOW                                    │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   1. User opens patient in Athena                                                │
+│      │                                                                           │
+│      ▼                                                                           │
+│   2. GET /ingest/clinical/{mrn} ───────────────► Plaud Backend (8001)            │
+│      │                                                                           │
+│      ▼                                                                           │
+│   3. Receive stored clinical data (instant)                                      │
+│      │                                                                           │
+│      ▼                                                                           │
+│   4. Display in WebUI ◄─────────────────────────────────────────────             │
+│      │                                                                           │
+│      │  (Meanwhile, scrape new data from Athena...)                              │
+│      ▼                                                                           │
+│   5. POST /ingest/athena ──────────────────────► Store new events                │
+│      │                                                                           │
+│      ▼                                                                           │
+│   6. Update WebUI with new data                                                  │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Fetch Clinical Data:**
+```bash
+# Request
+GET /ingest/clinical/18889107
+
+# Response (200 OK)
+{
+  "status": "found",
+  "athena_mrn": "18889107",
+  "patient_id": 31,
+  "last_updated": "2026-01-06T04:51:02.218698",
+  "clinical_data": {
+    "demographics": {
+      "first_name": "John N",
+      "last_name": "Finnicum",
+      "date_of_birth": "1944-02-18",
+      "gender": null,
+      "race": null,
+      "zip_code": "31721"
+    },
+    "medications": [...],
+    "problems": [...],
+    "allergies": [...],
+    "labs": [...],
+    "vitals": {...},
+    "encounters": [...],
+    "documents": [...],
+    "other": [...]
+  },
+  "event_count": 658,
+  "sources": ["athena"]
+}
+```
+
+**Benefits:**
+- **Instant display**: Show stored data immediately while scraping new data
+- **Persistent access**: Data available even if Athena session expired
+- **Longitudinal view**: See historical data accumulated over multiple visits
+
+**For Athena-Scraper implementation details**, see `ATHENA_SCRAPER_DATABASE_SPEC.md` Section 11.
 
 ---
 
-## 🚀 Deployment
+## Maintenance Guide
 
-### Development Mode
-
-```bash
-cd /opt/plaudai_uploader
-source venv/bin/activate
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Production Mode (systemd)
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for complete instructions.
-
-Quick summary:
-```bash
-# Create service
-sudo nano /etc/systemd/system/plaudai-uploader.service
-
-# Enable and start
-sudo systemctl enable plaudai-uploader
-sudo systemctl start plaudai-uploader
-
-# Check status
-sudo systemctl status plaudai-uploader
-```
-
-### Docker (Optional)
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY backend ./backend
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+### Log Analysis
 
 ```bash
-docker build -t plaudai-uploader .
-docker run -p 8000:8000 --env-file .env plaudai-uploader
-```
-
----
-
-## 🏗️ Architecture
-
-### System Design
-
-```
-User → Frontend (HTML/JS)
-         ↓ HTTP
-       FastAPI (Python)
-         ↓
-     Parser → Tagger → Extractor
-         ↓
-     SQLAlchemy ORM
-         ↓
-     PostgreSQL (surgical_command_center)
-```
-
-### Integration with SCC
-
-The Albany Vascular AI Clinical System is designed as a **modular component** that:
-- Runs independently on separate port (8001)
-- Shares the same PostgreSQL database
-- Doesn't conflict with existing SCC tables
-- Can be embedded in SCC UI later
-- Provides comprehensive AI-powered clinical documentation
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams and integration patterns.
-
----
-
-## 🧪 Testing
-
-### Manual Testing
-
-```bash
-# Test health
-curl http://localhost:8000/health
-
-# Test upload
-curl -X POST http://localhost:8000/upload \
-  -H "Content-Type: application/json" \
-  -d @test_data/sample_transcript.json
-
-# Verify database
-psql -U postgres -d surgical_command_center \
-  -c "SELECT * FROM voice_transcripts ORDER BY created_at DESC LIMIT 1;"
-```
-
-### Unit Tests (Future)
-
-```bash
-pytest tests/
-```
-
----
-
-## 🔒 Security
-
-### Current Status (Development)
-- ⚠️ No authentication required
-- ⚠️ CORS allows all origins
-- ⚠️ Credentials in .env file
-
-### Production Requirements
-- ✅ JWT authentication
-- ✅ SSL/TLS encryption
-- ✅ HIPAA-compliant logging
-- ✅ Audit trails
-- ✅ Data encryption at rest
-- ✅ Role-based access control
-
----
-
-## 🐛 Troubleshooting
-
-### Database Connection Failed
-
-```bash
-# Check PostgreSQL is running
-sudo systemctl status postgresql
-
-# Test connection
-psql -h localhost -U postgres -d surgical_command_center
-
-# Check pg_hba.conf
-sudo nano /etc/postgresql/*/main/pg_hba.conf
-```
-
-### Port Already in Use
-
-```bash
-# Find process
-sudo lsof -i :8000
-
-# Kill process
-sudo kill -9 <PID>
-```
-
-### Import Errors
-
-```bash
-# Ensure correct directory
-cd /opt/plaudai_uploader
-
-# Activate venv
-source venv/bin/activate
-
-# Test import
-python -c "from backend import main"
-```
-
-### Low Confidence Scores
-
-- Add more detail to transcripts
-- Use structured format with markdown headers
-- Include specific medical terms and values
-- Review `services/parser.py` keyword mappings
-
----
-
-## 📊 Performance
-
-### Current Capacity
-- Single worker: ~100 requests/minute
-- Database pool: 5 connections
-- Suitable for: <1000 procedures/month
-
-### Scaling
-```bash
-# Multi-worker mode
-uvicorn backend.main:app --workers 4 --host 0.0.0.0 --port 8000
-
-# Load balancing with nginx
-upstream plaudai { server 127.0.0.1:8000; server 127.0.0.1:8001; }
-```
-
----
-
-## 🗺️ Roadmap
-
-### Phase 1 (Current)
-- ✅ Basic upload and parsing
-- ✅ PVI field extraction
-- ✅ Web UI
-- ✅ REST API
-
-### Phase 2 (Next)
-- [ ] Gemini AI enhanced tagging
-- [ ] File upload support (PDF, DOCX)
-- [ ] Authentication & authorization
-- [ ] Advanced search filters
-
-### Phase 3 (Future)
-- [ ] SCC UI integration
-- [ ] Automated PlaudAI API sync
-- [ ] LTFU reminder system
-- [ ] Quality metrics dashboard
-
----
-
-## 🤝 Contributing
-
-### Development Setup
-
-```bash
-git clone <repo>
-cd plaudai_uploader
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt  # Testing tools
-```
-
-### Code Style
-
-- Follow PEP 8
-- Use type hints
-- Document functions with docstrings
-- Add unit tests for new features
-
----
-
-## 📄 License
-
-Proprietary - Internal use only for Surgical Command Center
-
----
-
-## 📞 Support
-
-### Documentation
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Server deployment
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System design
-- API Docs: `http://localhost:8000/docs`
-
-### Logs
-```bash
-# Application logs
+# View real-time logs
 tail -f logs/plaudai_uploader.log
 
-# Service logs (if using systemd)
-sudo journalctl -u plaudai-uploader -f
+# Find errors
+grep ERROR logs/plaudai_uploader.log
+
+# Check ingestion activity
+grep "AUTO-LINKED\|NO PATIENT MATCH" logs/plaudai_uploader.log
+
+# Count events by type
+grep "Ingested" logs/plaudai_uploader.log | awk '{print $4}' | sort | uniq -c
 ```
 
-### Database Queries
+### Database Maintenance
+
 ```sql
--- Check recent uploads
-SELECT patient_id, transcript_title, confidence_score, created_at
-FROM voice_transcripts
-ORDER BY created_at DESC LIMIT 10;
+-- Check table sizes
+SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
+FROM pg_catalog.pg_statio_user_tables
+ORDER BY pg_total_relation_size(relid) DESC;
 
--- View PVI procedures
-SELECT patient_id, procedure_date, rutherford_status, arteries_treated
-FROM pvi_procedures
-ORDER BY procedure_date DESC LIMIT 10;
+-- Vacuum and analyze
+VACUUM ANALYZE clinical_events;
+VACUUM ANALYZE integration_audit_log;
 
--- Statistics
-SELECT 
-  COUNT(*) as total_transcripts,
-  AVG(confidence_score) as avg_confidence,
-  COUNT(DISTINCT patient_id) as unique_patients
-FROM voice_transcripts;
+-- Check for orphan events (no patient link)
+SELECT COUNT(*) FROM clinical_events WHERE patient_id IS NULL;
+```
+
+### Common Issues
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| 405 on /ingest | Wrong endpoint | Use /ingest/athena |
+| Events not linking | Patient doesn't exist | Create patient first |
+| Duplicate warnings | Same data sent twice | Normal - idempotency working |
+| Connection refused | Server not running | Start uvicorn |
+| API key expired | Google key issue | Update .env, restart |
+
+### Server Management
+
+```bash
+# Start server
+cd ~/plaudai_uploader
+conda activate plaudai
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
+
+# Check if running
+ps aux | grep uvicorn
+
+# Stop server
+pkill -f "uvicorn.*8001"
+
+# Check port usage
+lsof -i :8001
 ```
 
 ---
 
-## 🎉 Acknowledgments
+## Version History
 
-- **Albany Vascular Specialist Center** - Clinical expertise and guidance
-- FastAPI framework - Modern Python web framework
-- Google Gemini AI - Advanced natural language processing
-- SQLAlchemy ORM - Database management
-- PlaudAI - Voice recording technology
-- SVS VQI - Vascular registry standards
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.1.0 | Jan 2026 | Bidirectional integration: GET /ingest/clinical/{mrn}, plaud-fetch telemetry |
+| 2.0.0 | Dec 2025 | Athena integration, auto-linking |
+| 1.5.0 | Dec 2025 | Patient search, rebranding |
+| 1.0.0 | Nov 2025 | Initial release |
 
 ---
 
-**Version**: 2.0.0
-**Last Updated**: December 2025
-**Organization**: Albany Vascular Specialist Center
-**Location**: 2300 Dawson Road, Suite 101, Albany, GA 31707
-**Contact**: (229) 436-8535
+**Organization:** Albany Vascular Specialist Center
+**Location:** 2300 Dawson Road, Suite 101, Albany, GA 31707
+**Contact:** (229) 436-8535

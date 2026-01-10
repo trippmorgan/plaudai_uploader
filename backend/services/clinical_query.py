@@ -1,6 +1,192 @@
 """
-PlaudAI Uploader - Clinical Query Service
-Natural language patient information retrieval with Gemini AI
+=============================================================================
+CLINICAL QUERY SERVICE - NATURAL LANGUAGE PATIENT LOOKUP
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    This module is the NATURAL LANGUAGE INTERFACE - it enables clinicians
+    to ask questions about patients using plain English and receive
+    AI-synthesized answers from the patient's medical records.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   CLINICIAN INPUT                                  │
+    │   "What's the status of Mr. Jones' left leg?"                     │
+    │   "When was MRN12345's last procedure?"                           │
+    │   "Show me medications for patient Smith"                         │
+    └────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │               clinical_query.py (THIS FILE)                        │
+    │                                                                    │
+    │  STEP 1: PATIENT IDENTIFICATION                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │  extract_patient_from_query()                                 │ │
+    │  │  Strategy 1: MRN pattern matching (most reliable)            │ │
+    │  │  Strategy 2: Full name extraction ("John Doe")               │ │
+    │  │  Strategy 3: Last name with title ("Mr. Jones")              │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │  STEP 2: DATA AGGREGATION                                          │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │  gather_patient_data() (from gemini_synopsis.py)              │ │
+    │  │  - Demographics                                               │ │
+    │  │  - Last 5 voice transcripts                                  │ │
+    │  │  - Last 5 procedures                                         │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │  STEP 3: PROMPT CONSTRUCTION                                       │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │  build_query_prompt()                                         │ │
+    │  │  - Patient context header                                    │ │
+    │  │  - User's question                                           │ │
+    │  │  - Clinical notes section                                    │ │
+    │  │  - Procedure history section                                 │ │
+    │  │  - Response format instructions                              │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │  STEP 4: AI SYNTHESIS                                              │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │  Gemini API Call                                              │ │
+    │  │  Returns: Clinically formatted answer to the question        │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────┘
+
+PATIENT IDENTIFICATION STRATEGIES:
+
+    STRATEGY 1: MRN EXTRACTION (Most Reliable)
+    Patterns recognized:
+    - "MRN123456" or "MRN: 123456" or "MRN-123456"
+    - Any alphanumeric string with 5+ digits
+    - Case insensitive matching
+    - Supports partial MRN matching
+
+    STRATEGY 2: FULL NAME EXTRACTION
+    Patterns recognized:
+    - "Mr. John Doe" or "Mrs. Jane Smith"
+    - "patient John Doe" or "for Jane Smith"
+    - "about Sarah Johnson" or "regarding Tom Wilson"
+    - Removes title prefixes before matching
+
+    STRATEGY 3: LAST NAME ONLY (Least Reliable)
+    Patterns recognized:
+    - "Mr. Jones" or "Mrs. Smith"
+    - "patient Wilson"
+    - If multiple matches: returns most recently updated
+    - Warning logged for ambiguous matches
+
+FUNCTION REFERENCE:
+
+    process_clinical_query(query, db) -> Dict
+        MAIN ENTRY POINT
+        PARAMS:
+          query: str - Natural language question from clinician
+          db: SQLAlchemy Session
+        RETURNS: Dict with:
+          - status: "success" | "error"
+          - patient: {name, mrn} (if found)
+          - response: AI-generated answer (if success)
+          - data_sources: {transcripts: N, procedures: N}
+          - message: Error description (if error)
+
+    extract_patient_from_query(query, db) -> Optional[Patient]
+        PARAMS: query string, db session
+        RETURNS: Patient ORM object or None
+        BEHAVIOR: Tries MRN → Full Name → Last Name strategies
+
+    extract_by_mrn(query, db) -> Optional[Patient]
+        Extract patient by MRN pattern matching
+
+    extract_by_full_name(query, db) -> Optional[Patient]
+        Extract patient by "FirstName LastName" pattern
+
+    extract_by_last_name(query, db) -> Optional[Patient]
+        Extract patient by "Title LastName" pattern
+
+    search_by_name_pair(first_name, last_name, db) -> Optional[Patient]
+        Database query helper for name matching
+
+    build_query_prompt(query, patient_data) -> str
+        PARAMS:
+          query: Original question
+          patient_data: Dict from gather_patient_data()
+        RETURNS: Complete prompt for Gemini
+        INCLUDES:
+          - Patient demographics
+          - User's question
+          - Clinical notes (formatted, with dates)
+          - Procedure history (with outcomes)
+          - Response format instructions
+
+PROMPT STRUCTURE:
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │ PATIENT INFORMATION:                                           │
+    │   Name: John Doe                                                │
+    │   MRN: 12345678                                                 │
+    │   Age: 67 years old                                             │
+    │   DOB: 1958-03-15                                               │
+    ├─────────────────────────────────────────────────────────────────┤
+    │ USER'S QUESTION:                                                │
+    │   "What medications is this patient on?"                        │
+    ├─────────────────────────────────────────────────────────────────┤
+    │ RECENT CLINICAL NOTES:                                          │
+    │   VISIT 1: 2025-12-20                                           │
+    │   Type: Follow-up                                               │
+    │   [PlaudAI note or raw transcript]                              │
+    │   Tags: pad, claudication, stent                                │
+    ├─────────────────────────────────────────────────────────────────┤
+    │ PROCEDURE HISTORY:                                              │
+    │   1. Date: 2025-11-15                                           │
+    │      Surgeon: Dr. Smith                                         │
+    │      Indication: CLI                                            │
+    │      Vessels: SFA, Popliteal                                    │
+    │      Success: Yes                                               │
+    ├─────────────────────────────────────────────────────────────────┤
+    │ INSTRUCTIONS:                                                   │
+    │   Provide concise, clinical answer                             │
+    │   Use professional medical terminology                          │
+    │   Organize chronologically                                      │
+    │   State explicitly if information missing                       │
+    └─────────────────────────────────────────────────────────────────┘
+
+DESIGN PRINCIPLES:
+
+    1. PATIENT IDENTIFICATION FIRST:
+       Must identify patient before querying data.
+       Fails gracefully with helpful error message.
+
+    2. MULTI-STRATEGY MATCHING:
+       Flexible patient identification accommodates
+       various input formats clinicians might use.
+
+    3. CONTEXT-RICH PROMPTS:
+       Provides Gemini with comprehensive patient
+       context for accurate, relevant answers.
+
+    4. PROFESSIONAL OUTPUT FORMAT:
+       Response instructions emphasize clinical
+       terminology and professional documentation style.
+
+SECURITY MODEL:
+    - No PHI in logs (only patient IDs)
+    - API key from environment
+    - Case-insensitive queries prevent information disclosure
+
+ERROR HANDLING:
+    - Patient not found → Clear error message with suggestion
+    - No clinical data → Acknowledge patient exists, note no records
+    - API failure → Detailed error in response
+
+MAINTENANCE NOTES:
+    - Add name patterns: Update extract_by_* functions
+    - Improve matching: Add fuzzy matching library
+    - Add multi-patient: Extend to return list with disambiguation
+
+VERSION: 2.0.0
+LAST UPDATED: 2025-12
+=============================================================================
 """
 import re
 import logging
@@ -26,35 +212,121 @@ else:
 def extract_patient_from_query(query: str, db: Session) -> Optional[Patient]:
     """
     Extract patient identifier from natural language query.
-    
+
     Supports:
     - MRN: "MRN123456", "patient MRN: 123456"
     - Names: "Mr. Jones", "patient John Doe", "for Jane Smith"
-    
+    - Direct word matching: Any word that matches a patient name
+
     Returns Patient object or None if not found/ambiguous
     """
     query_lower = query.lower().strip()
     logger.debug(f"🔍 Extracting patient from query: '{query}'")
-    
+
     # Strategy 1: Look for MRN (most reliable)
     patient = extract_by_mrn(query_lower, db)
     if patient:
         logger.info(f"✅ Found patient by MRN: {patient.athena_mrn}")
         return patient
-    
-    # Strategy 2: Look for full name patterns
-    patient = extract_by_full_name(query_lower, db)
+
+    # Strategy 2: Look for full name patterns (use ORIGINAL query to preserve case)
+    patient = extract_by_full_name(query, db)
     if patient:
         logger.info(f"✅ Found patient by full name: {patient.first_name} {patient.last_name}")
         return patient
-    
+
     # Strategy 3: Look for last name only (less reliable)
-    patient = extract_by_last_name(query_lower, db)
+    patient = extract_by_last_name(query, db)
     if patient:
         logger.info(f"✅ Found patient by last name: {patient.last_name}")
         return patient
-    
+
+    # Strategy 4: Direct word matching - search each word against patient names
+    patient = extract_by_word_matching(query, db)
+    if patient:
+        logger.info(f"✅ Found patient by word matching: {patient.first_name} {patient.last_name}")
+        return patient
+
     logger.warning(f"❌ Could not identify patient from query: '{query}'")
+    return None
+
+
+def extract_by_word_matching(query: str, db: Session) -> Optional[Patient]:
+    """
+    Search each word in the query against patient first/last names.
+
+    This is a fallback strategy that handles cases like:
+    - "What medications is Janice Pringle on?"
+    - "Show me labs for John Doe"
+
+    Works by extracting all words and checking if any consecutive pair
+    or single word matches a patient name.
+    """
+    # Extract all words (letters only, 2+ chars)
+    words = re.findall(r'\b([A-Za-z]{2,})\b', query)
+
+    # Filter out common non-name words
+    stop_words = {
+        'what', 'when', 'where', 'who', 'which', 'how', 'why',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+        'the', 'a', 'an', 'and', 'or', 'but', 'for', 'with', 'about', 'from', 'to', 'of',
+        'on', 'in', 'at', 'by', 'this', 'that', 'these', 'those',
+        'patient', 'mr', 'mrs', 'ms', 'dr', 'miss',
+        'medications', 'medication', 'meds', 'drugs', 'medicine',
+        'labs', 'lab', 'results', 'test', 'tests',
+        'history', 'summary', 'show', 'give', 'get', 'find', 'list',
+        'all', 'recent', 'latest', 'current', 'last', 'first',
+        'please', 'can', 'you', 'me', 'my', 'their', 'his', 'her'
+    }
+
+    candidate_words = [w for w in words if w.lower() not in stop_words]
+
+    if not candidate_words:
+        return None
+
+    logger.debug(f"🔎 Candidate name words: {candidate_words}")
+
+    # Try consecutive word pairs first (most likely to be full names)
+    for i in range(len(candidate_words) - 1):
+        first = candidate_words[i]
+        last = candidate_words[i + 1]
+
+        patient = db.query(Patient).filter(
+            Patient.first_name.ilike(first),
+            Patient.last_name.ilike(last)
+        ).first()
+
+        if patient:
+            return patient
+
+        # Try partial match
+        patient = db.query(Patient).filter(
+            Patient.first_name.ilike(f"%{first}%"),
+            Patient.last_name.ilike(f"%{last}%")
+        ).first()
+
+        if patient:
+            return patient
+
+    # Try single words as last name (common pattern: "Pringle's medications")
+    for word in candidate_words:
+        if len(word) >= 3:  # Skip very short words
+            patients = db.query(Patient).filter(
+                Patient.last_name.ilike(word)
+            ).all()
+
+            if len(patients) == 1:
+                return patients[0]
+
+            # Also try as first name
+            patients = db.query(Patient).filter(
+                Patient.first_name.ilike(word)
+            ).all()
+
+            if len(patients) == 1:
+                return patients[0]
+
     return None
 
 

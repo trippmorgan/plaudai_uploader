@@ -1,5 +1,186 @@
+"""
+=============================================================================
+CATEGORY-SPECIFIC GEMINI PARSER
+=============================================================================
 
-#python"""
+ARCHITECTURAL ROLE:
+    This module is the SPECIALIZED EXTRACTION ENGINE - it uses Google's
+    Gemini LLM to extract structured data from medical records based on
+    their category (operative note, imaging, lab, office visit). Unlike
+    parser.py (regex-based), this uses AI for semantic understanding.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   MEDICAL RECORD INPUT                             │
+    │   User specifies: record_category = "operative_note" | "imaging"  │
+    │                   | "lab_result" | "office_visit"                 │
+    └────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │               category_parser.py (THIS FILE)                       │
+    │                                                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            PROMPT SELECTION                                   │ │
+    │  │  PROMPTS[category] → Specialized JSON schema prompt          │ │
+    │  │                                                               │ │
+    │  │  operative_note: procedure_name, surgeon, findings, devices   │ │
+    │  │  imaging: study_type, stenosis_percent, measurements          │ │
+    │  │  lab_result: test_name, value, flag, critical_values         │ │
+    │  │  office_visit: chief_complaint, vitals, medications, plan    │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            Gemini API Call                                    │ │
+    │  │  Model: gemini-2.0-flash                                     │ │
+    │  │  Input: Category prompt + raw medical text                   │ │
+    │  │  Output: JSON string matching category schema                │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            JSON PARSING & VALIDATION                          │ │
+    │  │  Strip markdown code blocks (```json ... ```)                │ │
+    │  │  Parse JSON → Dict                                           │ │
+    │  │  Return structured data or error dict                        │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            SUMMARY GENERATION                                 │ │
+    │  │  generate_category_summary() → Human-readable text           │ │
+    │  │  Format varies by category for optimal display               │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────┘
+
+CATEGORY SCHEMAS:
+
+    OPERATIVE_NOTE:
+    {
+      "procedure_name": "Primary procedure performed",
+      "surgeon": "Surgeon name",
+      "date": "YYYY-MM-DD",
+      "preop_diagnosis": "Diagnosis before surgery",
+      "postop_diagnosis": "Diagnosis after surgery",
+      "procedure_details": "Step-by-step description",
+      "findings": ["Key intraoperative findings"],
+      "devices_used": ["Devices/implants used"],
+      "estimated_blood_loss": "Amount in mL",
+      "complications": ["Complications or 'None'"],
+      "specimens": ["Specimens sent to pathology"],
+      "closure": "How wounds were closed",
+      "disposition": "Post-op destination"
+    }
+
+    IMAGING:
+    {
+      "study_type": "CT/Ultrasound/MRI/X-Ray",
+      "study_name": "Specific study name",
+      "study_date": "YYYY-MM-DD",
+      "indication": "Reason for study",
+      "technique": "Imaging protocol",
+      "findings": {
+        "key_findings": ["Most important findings"],
+        "aneurysm_size": "Size if present",
+        "stenosis_percent": "Stenosis percentage",
+        "detailed_findings": "Full description"
+      },
+      "measurements": [{"structure": "...", "value": "..."}],
+      "impression": "Radiologist's conclusion",
+      "recommendations": ["Follow-up recommendations"]
+    }
+
+    LAB_RESULT:
+    {
+      "collection_date": "YYYY-MM-DD",
+      "lab_panel": "Panel name",
+      "results": [{"test_name": "...", "value": "...", "flag": "..."}],
+      "abnormal_values": [{"test": "...", "value": "...", "flag": "..."}],
+      "critical_values": ["Any critical results"],
+      "creatinine": "Value if present",
+      "gfr": "Value if present",
+      "interpretation": "Clinical significance"
+    }
+
+    OFFICE_VISIT:
+    {
+      "visit_date": "YYYY-MM-DD",
+      "visit_type": "New patient/Follow-up/Consultation",
+      "chief_complaint": "Patient's main concern",
+      "hpi": "History of present illness",
+      "medications": ["Current medications"],
+      "allergies": ["Known allergies"],
+      "vitals": {"bp": "...", "hr": "...", "temp": "..."},
+      "physical_exam": "Exam findings",
+      "assessment": "Clinical assessment",
+      "plan": "Treatment plan"
+    }
+
+FUNCTION REFERENCE:
+
+    parse_by_category(text, category) -> Dict
+        PARAMS:
+          text: str - Raw medical text to parse
+          category: str - "operative_note" | "imaging" | "lab_result" | "office_visit"
+        RETURNS: Dict matching category schema (or {"error": "..."})
+        BEHAVIOR:
+          - Selects category-specific prompt
+          - Calls Gemini API
+          - Strips markdown formatting from response
+          - Parses JSON and returns dict
+        ERROR: Returns {"error": "...", "raw_response": "..."} on failure
+
+    generate_category_summary(parsed_data, category) -> str
+        PARAMS:
+          parsed_data: Dict - Output from parse_by_category()
+          category: str - Record category
+        RETURNS: Human-readable formatted summary string
+        BEHAVIOR:
+          - Formats data based on category
+          - Operative: Procedure, surgeon, findings, complications
+          - Imaging: Study type, key findings, impression
+          - Lab: Critical values, abnormal results, key labs
+          - Office: Chief complaint, medications, assessment, plan
+
+DESIGN PRINCIPLES:
+
+    1. STRICT JSON OUTPUT:
+       Prompts instruct "Return ONLY valid JSON" to minimize
+       parsing failures. Gemini occasionally wraps in markdown
+       code blocks, which are stripped before parsing.
+
+    2. CATEGORY-SPECIFIC SCHEMAS:
+       Each category has a tailored schema extracting the
+       most clinically relevant fields for that record type.
+
+    3. FALLBACK HANDLING:
+       If category not found, defaults to office_visit prompt.
+       If parsing fails, returns error dict with raw response
+       for debugging.
+
+    4. SEPARATION FROM SYNOPSIS:
+       This module extracts STRUCTURED DATA from single records.
+       gemini_synopsis.py SYNTHESIZES across multiple records.
+
+SECURITY MODEL:
+    - API key from environment (never in code)
+    - No PHI logged (only category and error messages)
+
+COST CONSIDERATIONS:
+    - Each parse_by_category() call = 1 Gemini API request
+    - More expensive than regex parsing (parser.py)
+    - Use for high-value extraction where AI needed
+
+MAINTENANCE NOTES:
+    - Add new categories: Add to PROMPTS dict + generate_category_summary()
+    - Modify schema: Update corresponding PROMPTS entry
+    - Handle new JSON issues: Extend response cleaning logic
+
+VERSION: 2.0.0
+LAST UPDATED: 2025-12
+=============================================================================
+"""
 #Category-Specific Gemini Parser
 #Uses different prompts based on medical record type
 

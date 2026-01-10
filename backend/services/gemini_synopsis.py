@@ -1,6 +1,182 @@
 """
-PlaudAI Uploader - Gemini AI Clinical Synopsis Generator
-Creates comprehensive clinical summaries from patient data
+=============================================================================
+GEMINI AI CLINICAL SYNOPSIS GENERATOR
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    This module is the AI SYNTHESIS ENGINE - it aggregates patient data
+    from multiple sources and uses Google's Gemini LLM to generate
+    comprehensive, human-readable clinical summaries.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                    DATABASE (Source Data)                          │
+    │   patients → voice_transcripts → pvi_procedures                   │
+    └───────────────┬───────────────────┬────────────────────────────────┘
+                    │                   │
+                    ▼                   ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                gemini_synopsis.py (THIS FILE)                      │
+    │                                                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            gather_patient_data()                              │ │
+    │  │  Query: Transcripts + Procedures for last N days             │ │
+    │  │  Output: Structured dict with demographics, visits, procs    │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            build_synopsis_prompt()                            │ │
+    │  │  Type-specific prompts:                                      │ │
+    │  │  - comprehensive: Full clinical summary (10 sections)        │ │
+    │  │  - visit_summary: Last encounter only                        │ │
+    │  │  - problem_list: Active medical problems                     │ │
+    │  │  - procedure_summary: Recent procedures                      │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            Gemini API Call                                    │ │
+    │  │  Model: gemini-2.0-flash (fast, cost-effective)              │ │
+    │  │  Input: Structured prompt with patient context               │ │
+    │  │  Output: Formatted clinical synopsis text                    │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            parse_synopsis_sections()                          │ │
+    │  │  Extract structured sections from free-text response         │ │
+    │  │  Sections: chief_complaint, hpi, medications, assessment...  │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            ClinicalSynopsis Record                            │ │
+    │  │  Store: synopsis_text, parsed sections, token usage          │ │
+    │  │  Cache: Valid for 24 hours (avoid regeneration)              │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────┘
+
+CRITICAL DESIGN PRINCIPLES:
+
+    1. CACHING WITH 24-HOUR TTL:
+       Synopses are expensive to generate (~1-2 seconds, API costs).
+       - Check for existing synopsis < 24 hours old
+       - force_regenerate=True bypasses cache
+       - Prevents redundant API calls
+
+    2. SYNOPSIS TYPE SPECIALIZATION:
+       Different clinical needs require different outputs:
+       - comprehensive: Full H&P-style documentation
+       - visit_summary: Quick single-encounter summary
+       - problem_list: Active problems with treatments
+       - procedure_summary: Surgical history focus
+
+    3. TOKEN TRACKING:
+       AI cost management via token counting:
+       - tokens_used stored in database
+       - Enables cost analysis per patient/synopsis
+       - Helps optimize prompt length
+
+    4. SECTION PARSING:
+       AI output parsed into structured fields:
+       - Enables frontend display by section
+       - Allows section-specific queries
+       - Provides consistency across synopses
+
+FUNCTION REFERENCE:
+
+    gather_patient_data(db, patient_id, days_back=365) -> Dict
+        PARAMS:
+          db: SQLAlchemy Session
+          patient_id: int - Target patient
+          days_back: int - Lookback window (default 365 days)
+        RETURNS: Dict with:
+          - demographics: {name, mrn, dob, age, birth_sex, race, zip}
+          - transcripts: List of {date, visit_type, title, raw, plaud, tags}
+          - procedures: List of {date, surgeon, indication, rutherford, ...}
+          - date_range: {start, end}
+        RAISES: ValueError if patient not found
+
+    calculate_age(dob) -> int
+        PARAMS: dob - Date of birth
+        RETURNS: Age in years (birthday-aware)
+
+    build_synopsis_prompt(patient_data, synopsis_type) -> str
+        PARAMS:
+          patient_data: Dict from gather_patient_data()
+          synopsis_type: "comprehensive" | "visit_summary" | "problem_list" | "procedure_summary"
+        RETURNS: Complete prompt string for Gemini
+        INCLUDES: Demographics, last 5 transcripts, last 3 procedures, task instructions
+
+    generate_clinical_synopsis(db, patient_id, synopsis_type, days_back, force_regenerate) -> ClinicalSynopsis
+        PARAMS:
+          db: SQLAlchemy Session
+          patient_id: int - Target patient
+          synopsis_type: str - Type of synopsis
+          days_back: int - Lookback window
+          force_regenerate: bool - Bypass cache
+        RETURNS: ClinicalSynopsis ORM object
+        RAISES: ValueError if no API key or patient not found
+
+    parse_synopsis_sections(synopsis_text) -> Dict[str, str]
+        PARAMS: synopsis_text - Raw Gemini output
+        RETURNS: Dict mapping section names to content
+        SECTIONS: chief_complaint, history_present_illness, past_medical_history,
+                  medications, allergies, social_history, physical_exam, assessment_plan
+
+    get_latest_synopsis(db, patient_id, synopsis_type) -> ClinicalSynopsis|None
+        Query for most recent synopsis of given type
+
+    get_all_synopses(db, patient_id) -> List[ClinicalSynopsis]
+        Query for all synopses for a patient
+
+    get_patient_summary(db, mrn) -> Dict
+        Quick lookup by MRN returning patient info + latest synopsis
+
+PROMPT ENGINEERING:
+    The comprehensive synopsis prompt requests 10 sections:
+    1. Chief Complaint / Presenting Problems
+    2. History of Present Illness
+    3. Past Medical History (vascular focus)
+    4. Medications
+    5. Allergies
+    6. Social History (smoking, activity)
+    7. Review of Systems
+    8. Physical Examination
+    9. Assessment and Plan
+    10. Pending Items
+
+API CONFIGURATION:
+    - Model: GEMINI_MODEL from config (default: gemini-2.0-flash)
+    - API Key: GOOGLE_API_KEY from environment
+    - No streaming (full response returned)
+    - Default timeout via google-generativeai library
+
+SECURITY MODEL:
+    - API key stored in environment, not code
+    - No PHI sent to logs (only IDs)
+    - Token counts tracked (cost monitoring)
+
+COST OPTIMIZATION:
+    - 24-hour cache prevents redundant calls
+    - Transcript truncation (500 chars) reduces tokens
+    - Limited to 5 transcripts + 3 procedures per synopsis
+
+MAINTENANCE NOTES:
+    - Change synopsis types: Add to PROMPTS dict and build_synopsis_prompt()
+    - Adjust cache TTL: Modify timedelta(hours=24) in generate_clinical_synopsis()
+    - Add section markers: Update markers dict in parse_synopsis_sections()
+
+ERROR HANDLING:
+    - Missing API key: Raises ValueError with clear message
+    - Patient not found: Raises ValueError
+    - Gemini API failure: Logs error, re-raises
+    - Empty data: Warns but still attempts generation
+
+VERSION: 2.0.0
+LAST UPDATED: 2025-12
+=============================================================================
 """
 import google.generativeai as genai
 from sqlalchemy.orm import Session

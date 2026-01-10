@@ -1,6 +1,87 @@
 """
-Albany Vascular Specialist Center - AI Clinical Documentation System
-Vascular Surgery AI Uploader and Surgical Note Generator
+=============================================================================
+ALBANY VASCULAR SPECIALIST CENTER - AI CLINICAL DOCUMENTATION SYSTEM
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    This is the APPLICATION ENTRYPOINT - the FastAPI application root that:
+    1. Initializes all system components (database, logging, routes)
+    2. Defines the HTTP API surface for client interaction
+    3. Orchestrates request/response flow through middleware
+    4. Connects frontend, backend services, and external integrations
+
+DATA FLOW POSITION:
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                     EXTERNAL CLIENTS                            │
+    │   (Browser/Frontend) ──► (Athena-Scraper) ──► (PlaudAI App)    │
+    └────────────────────────────┬────────────────────────────────────┘
+                                 │ HTTP Requests
+                                 ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                      main.py (THIS FILE)                        │
+    │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐    │
+    │  │  Middleware │  │   Routes    │  │   Static Files       │    │
+    │  │  (Logging)  │──►  (API)     │  │   (Frontend/PDFs)    │    │
+    │  └─────────────┘  └──────┬──────┘  └──────────────────────┘    │
+    └──────────────────────────┼──────────────────────────────────────┘
+                               ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                      SERVICE LAYER                              │
+    │  uploader.py │ gemini_synopsis.py │ parser.py │ pdf_generator  │
+    └──────────────────────────┬──────────────────────────────────────┘
+                               ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                      DATA LAYER                                 │
+    │          db.py ──► models.py ──► PostgreSQL                    │
+    └─────────────────────────────────────────────────────────────────┘
+
+CRITICAL DESIGN PRINCIPLES:
+    1. DEPENDENCY INJECTION: Database sessions injected via FastAPI Depends()
+       - Ensures proper session lifecycle (create → use → cleanup)
+       - Enables testability through mock injection
+       - Prevents connection leaks via try/finally pattern in get_db()
+
+    2. SEPARATION OF CONCERNS:
+       - Routes: HTTP interface (validation, serialization, error handling)
+       - Services: Business logic (parsing, AI generation, uploads)
+       - Models: Data structure and persistence
+
+    3. FAIL-FAST STARTUP: Application refuses to start if database unavailable
+       - Prevents partial availability and zombie processes
+       - Forces explicit resolution of infrastructure issues
+
+    4. STATELESS REQUEST HANDLING: No server-side session state
+       - Enables horizontal scaling behind load balancer
+       - Each request is self-contained with JWT/auth if needed
+
+SECURITY MODEL:
+    - CORS: Currently permissive (allow_origins=["*"]) - suitable for
+      development or trusted network only. MUST be restricted for production.
+    - Input Validation: Pydantic schemas enforce type safety on all inputs
+    - SQL Injection: ORM parameterization prevents injection attacks
+    - Error Handling: Exceptions caught and logged; stack traces hidden from clients
+    - Audit Trail: All ingestion actions logged to IntegrationAuditLog table
+
+MAINTENANCE NOTES:
+    - Add new routes by: (1) Create router in routes/, (2) Import here,
+      (3) Register with app.include_router()
+    - Static file serving is LAST - ensures API routes take precedence
+    - Background tasks use FastAPI's BackgroundTasks (not Celery)
+    - Health check at /health validates database connectivity
+    - Logs format: [REQUEST_ID] METHOD PATH - enables distributed tracing
+
+FILE DEPENDENCIES:
+    - .db: Database engine, session factory, Base class
+    - .config: Environment configuration (ports, keys, debug flags)
+    - .logging_config: Structured logging setup
+    - .models: SQLAlchemy ORM models (Patient, VoiceTranscript, etc.)
+    - .schemas: Pydantic request/response models
+    - .services/*: Business logic implementations
+    - .routes/*: Modular API endpoints (e.g., ingest for Athena)
+
+VERSION: 2.0.0
+LAST UPDATED: 2025-12
+=============================================================================
 """
 import os
 import time
@@ -48,6 +129,20 @@ from .services.category_parser import parse_by_category, generate_category_summa
 from .services.clinical_query import process_clinical_query
 from .services.gemini_parser import parse_with_gemini, generate_record_summary
 
+# Telemetry for Medical Mirror Observer
+from .services.telemetry import (
+    emit,
+    emit_upload_received,
+    emit_upload_processed,
+    emit_upload_failed,
+    emit_patients_queried,
+    emit_clinical_query,
+    emit_clinical_response
+)
+
+# Athena Integration Router
+from .routes.ingest import router as ingest_router
+
 # ==================== Logging Setup ====================
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -92,6 +187,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== Register Routers ====================
+app.include_router(ingest_router)  # Athena Integration: /ingest/*
+
 # ==================== Startup & Health ====================
 
 @app.on_event("startup")
@@ -112,24 +210,11 @@ async def startup_event():
 
     logger.info("✅ Albany Vascular AI Clinical System ready to accept connections")
 
-@app.get("/")
-async def root():
-    """Health check and API info"""
-    return {
-        "service": "Albany Vascular AI Clinical System",
-        "version": "2.0.0",
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "database": "connected",
-        "endpoints": {
-            "upload": "/upload",
-            "batch_upload": "/batch-upload",
-            "patients": "/patients",
-            "transcripts": "/transcripts",
-            "procedures": "/procedures",
-            "emr_chart": "/patients/{id}/emr-chart"
-        }
-    }
+# REMOVED: Root route was blocking static file serving of frontend/index.html
+# The /health endpoint provides the same health info
+# @app.get("/")
+# async def root():
+#     return {...}  # Health info moved to /health endpoint
 
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
@@ -160,6 +245,13 @@ async def upload_note(
 
     Supports operative notes, imaging reports, lab results, and office visit notes
     """
+    # Telemetry: Track upload received
+    correlation_id = await emit_upload_received(
+        has_patient_info=bool(data.first_name and data.athena_mrn),
+        record_type=data.record_category or "office_visit",
+        mrn=data.athena_mrn
+    )
+
     try:
         category = data.record_category or "office_visit"
         logger.info(f"Processing {category} upload for MRN: {data.athena_mrn}")
@@ -235,7 +327,37 @@ async def upload_note(
             warnings.append(f"Category parsing issue: {category_data.get('error', 'Unknown error')}")
         
         logger.info(f"✅ {category} record saved: ID {transcript.id}")
-        
+
+        # Telemetry: Track successful upload with data quality metrics
+        await emit_upload_processed(
+            correlation_id=correlation_id,
+            patient_id=patient.id,
+            transcript_id=transcript.id,
+            confidence=confidence,
+            category=category,
+            tags_count=len(tags) if tags else 0
+        )
+
+        # Telemetry: Track data quality (fields present/missing)
+        await emit('upload', 'DATA_QUALITY_ASSESSMENT', {
+            'correlationId': correlation_id,
+            'fieldsPresent': {
+                'firstName': bool(data.first_name),
+                'lastName': bool(data.last_name),
+                'dob': bool(data.dob),
+                'mrn': bool(data.athena_mrn),
+                'birthSex': bool(data.birth_sex),
+                'race': bool(data.race),
+                'zipCode': bool(data.zip_code),
+                'rawTranscript': bool(data.raw_transcript),
+                'plaudNote': bool(data.plaud_note),
+                'recordingDate': bool(data.recording_date),
+                'visitType': bool(data.visit_type)
+            },
+            'hasStructuredData': bool(category_data and 'error' not in category_data),
+            'hasPviFields': bool(pvi_fields and len(pvi_fields) >= 3)
+        })
+
         return UploadResponse(
             status="success",
             message=f"{category.replace('_', ' ').title()} uploaded successfully",
@@ -245,9 +367,11 @@ async def upload_note(
             confidence_score=confidence,
             warnings=warnings if warnings else None
         )
-    
+
     except Exception as e:
         logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        # Telemetry: Track failed upload
+        await emit_upload_failed(correlation_id=correlation_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -388,9 +512,17 @@ async def list_patients(
             patients = search_patients(db, search)[:limit]
         else:
             patients = db.query(Patient).limit(limit).all()
+
+        # Telemetry: Track patient query
+        await emit_patients_queried(
+            result_count=len(patients),
+            query_type='search' if search else 'list'
+        )
+
         return patients
     except Exception as e:
         logger.error(f"Error listing patients: {e}")
+        await emit('query', 'PATIENTS_QUERY_FAILED', {'error': str(e)}, success=False)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -721,28 +853,50 @@ async def clinical_query_endpoint(
     Natural language clinical query interface
     """
     query = request.get("query", "").strip()
-    
+
     if not query:
         logger.warning("Empty query received")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Query cannot be empty"
         )
-    
+
     logger.info(f"📥 Clinical query received: '{query[:50]}...'")
-    
+
+    # Telemetry: Track query submission
+    correlation_id = await emit_clinical_query(
+        query_length=len(query),
+        patient_found=False  # Will update after processing
+    )
+
     try:
         result = process_clinical_query(query, db)
-        
+
         if result["status"] == "error":
             logger.warning(f"⚠️ Query failed: {result.get('message')}")
+            await emit('ai-query', 'QUERY_FAILED', {
+                'correlationId': correlation_id,
+                'error': result.get('message', 'Unknown error')
+            }, success=False)
             return result
-        
+
         logger.info(f"✅ Query successful for patient: {result['patient']['mrn']}")
+
+        # Telemetry: Track successful response
+        await emit_clinical_response(
+            correlation_id=correlation_id,
+            response_length=len(result.get('response', '')),
+            data_sources=result.get('data_sources', {})
+        )
+
         return result
-        
+
     except Exception as e:
         logger.error(f"❌ Clinical query endpoint error: {e}", exc_info=True)
+        await emit('ai-query', 'QUERY_FAILED', {
+            'correlationId': correlation_id,
+            'error': str(e)
+        }, success=False)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Query processing failed: {str(e)}"

@@ -1,6 +1,116 @@
 """
-PlaudAI Uploader - Database ORM Models
-Enhanced with PVI Registry fields
+=============================================================================
+CORE ORM MODELS - PLAUDAI CLINICAL DOCUMENTATION SYSTEM
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    These SQLAlchemy ORM models define the CORE DATA STRUCTURES for clinical
+    documentation. They map Python objects to PostgreSQL tables, enabling
+    type-safe database operations without raw SQL.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                      INPUT SOURCES                                 │
+    │   PlaudAI Voice ──► Parser ──► VoiceTranscript                    │
+    │   Manual Entry ──► API ──► Patient / PVIProcedure                 │
+    │   AI Synopsis ──► Gemini ──► ClinicalSynopsis                     │
+    └────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                    models.py (THIS FILE)                           │
+    │  ┌────────────┐  ┌─────────────────┐  ┌────────────────────────┐  │
+    │  │  Patient   │◄─┤ VoiceTranscript │  │    ClinicalSynopsis    │  │
+    │  │ (Central)  │  │ (Input Storage) │  │    (AI Generated)      │  │
+    │  └────┬───────┘  └────────┬────────┘  └────────────────────────┘  │
+    │       │                   │                                        │
+    │       │    ┌──────────────┘                                        │
+    │       ▼    ▼                                                       │
+    │  ┌────────────────────────────────────────────────────────────┐   │
+    │  │               PVIProcedure                                  │   │
+    │  │  (Peripheral Vascular Intervention Registry)               │   │
+    │  │  Extracted from operative notes for quality reporting      │   │
+    │  └────────────────────────────────────────────────────────────┘   │
+    └────────────────────────────────────────────────────────────────────┘
+
+ENTITY RELATIONSHIP DIAGRAM:
+                    ┌─────────────────────────┐
+                    │        Patient          │
+                    │─────────────────────────│
+                    │ id (PK)                 │
+                    │ athena_mrn (UNIQUE)     │◄───────────────┐
+                    │ first_name, last_name   │                │
+                    │ dob, birth_sex, race    │                │
+                    └───────────┬─────────────┘                │
+                                │ 1:N                          │
+              ┌─────────────────┼─────────────────┬────────────┘
+              ▼                 ▼                 ▼
+    ┌─────────────────┐ ┌────────────────┐ ┌───────────────────┐
+    │ VoiceTranscript │ │ PVIProcedure   │ │ ClinicalSynopsis  │
+    │─────────────────│ │────────────────│ │───────────────────│
+    │ id (PK)         │ │ id (PK)        │ │ id (PK)           │
+    │ patient_id (FK) │ │ patient_id (FK)│ │ patient_id (FK)   │
+    │ raw_transcript  │ │ procedure_date │ │ synopsis_text     │
+    │ plaud_note      │ │ arteries_treated│ │ ai_model          │
+    │ record_category │ │ complications   │ │ tokens_used       │
+    └────────┬────────┘ └────────▲───────┘ └───────────────────┘
+             │                   │
+             │ 1:1               │ 1:1 (optional)
+             └───────────────────┘
+             transcript_id (FK)
+
+CRITICAL DESIGN PRINCIPLES:
+
+    1. PATIENT AS CENTRAL ENTITY:
+       - All clinical data links to Patient via patient_id FK
+       - athena_mrn is the UNIQUE external identifier (from Athena EMR)
+       - Cascade delete: Deleting patient removes all related records
+
+    2. VOICE TRANSCRIPT AS PRIMARY INPUT:
+       - Stores BOTH raw transcript AND PlaudAI-formatted note
+       - category_specific_data (JSON) holds parsed structured data
+       - Links to procedures extracted from operative notes
+
+    3. PVI REGISTRY COMPLIANCE:
+       - PVIProcedure follows SVS (Society for Vascular Surgery) data elements
+       - Required for quality reporting and registry submission
+       - Extracted automatically from operative note transcripts
+
+    4. AI SYNOPSIS GENERATION:
+       - ClinicalSynopsis stores Gemini-generated summaries
+       - Tracks token usage for cost monitoring
+       - Multiple synopsis types (comprehensive, visit_summary, etc.)
+
+COLUMN TYPE MAPPING:
+    String(N)       → VARCHAR(N)     - Fixed-length strings
+    Text            → TEXT           - Unlimited text (transcripts, notes)
+    Integer         → INTEGER        - IDs, counts
+    Float           → DOUBLE         - ABI values, measurements
+    Boolean         → BOOLEAN        - Flags (mortality, complications)
+    Date            → DATE           - DOB, procedure dates
+    DateTime        → TIMESTAMP      - Created/updated timestamps
+    JSON            → JSONB          - Structured data (tags, medications)
+
+INDEXING STRATEGY:
+    - Primary keys: Automatic B-tree index
+    - Foreign keys: Explicit index=True for join performance
+    - athena_mrn: Unique index for fast MRN lookups
+    - patient_id: Index on all child tables for relationship queries
+
+SECURITY MODEL:
+    - No PHI in column names (uses generic names)
+    - Sensitive data (SSN, etc.) not stored in this system
+    - Audit trail via separate IntegrationAuditLog (models_athena.py)
+
+MAINTENANCE NOTES:
+    - Add columns via Alembic migration (not Base.metadata.create_all)
+    - JSON columns can store arbitrary data but lose query efficiency
+    - Relationship cascade="all, delete-orphan" ensures cleanup
+    - Use server_default for timestamps (database sets value)
+
+VERSION: 2.0.0 (PVI Registry Enhanced)
+LAST UPDATED: 2025-12
+=============================================================================
 """
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, JSON, Float, Boolean, ForeignKey
 from sqlalchemy.sql import func

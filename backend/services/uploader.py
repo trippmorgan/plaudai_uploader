@@ -1,6 +1,174 @@
 """
-PlaudAI Uploader - Database Upload Service
-Handles patient creation, transcript storage, and logging
+=============================================================================
+DATABASE UPLOAD SERVICE
+=============================================================================
+
+ARCHITECTURAL ROLE:
+    This module is the PRIMARY DATA INGESTION SERVICE - the central
+    orchestrator for creating patients, storing transcripts, and generating
+    PVI procedure records from PlaudAI voice recordings.
+
+DATA FLOW POSITION:
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   EXTERNAL SOURCES                                 │
+    │   PlaudAI App ──► API Upload ──► TranscriptUpload Schema          │
+    │   File Upload ──► POST /upload-file ──► TranscriptUpload          │
+    │   Batch API   ──► POST /batch-upload ──► BatchUploadRequest       │
+    └────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   uploader.py (THIS FILE)                          │
+    │                                                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            get_or_create_patient()                            │ │
+    │  │  1. Query by athena_mrn (unique identifier)                  │ │
+    │  │  2. If exists → update demographics if changed               │ │
+    │  │  3. If new → INSERT into patients table                      │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            upload_transcript()                                │ │
+    │  │  1. Create/get patient record                                │ │
+    │  │  2. Parse transcript (parser.py) → tags, pvi_fields         │ │
+    │  │  3. INSERT VoiceTranscript record                            │ │
+    │  │  4. If PVI fields sufficient → create_pvi_procedure()       │ │
+    │  │  5. COMMIT transaction                                       │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    │                               │                                    │
+    │                               ▼                                    │
+    │  ┌──────────────────────────────────────────────────────────────┐ │
+    │  │            create_pvi_procedure()                             │ │
+    │  │  Map extracted fields to PVIProcedure model columns          │ │
+    │  │  Required: patient_id, transcript_id, procedure_date         │ │
+    │  └──────────────────────────────────────────────────────────────┘ │
+    └────────────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+    ┌────────────────────────────────────────────────────────────────────┐
+    │                   DATABASE (PostgreSQL)                            │
+    │   patients ◄── voice_transcripts ◄── pvi_procedures              │
+    └────────────────────────────────────────────────────────────────────┘
+
+CRITICAL DESIGN PRINCIPLES:
+
+    1. UPSERT PATIENT PATTERN:
+       get_or_create_patient() implements upsert semantics:
+       - First query by athena_mrn (the unique identifier)
+       - If found, update any changed demographic fields
+       - If not found, create new patient record
+       - Returns Patient object in all cases
+
+    2. AUTOMATIC PVI EXTRACTION:
+       When a transcript is uploaded:
+       - parser.process_transcript() extracts PVI fields
+       - If >= 3 fields extracted → create PVIProcedure record
+       - Links transcript to procedure for traceability
+
+    3. DUAL TEXT STORAGE:
+       Both raw_transcript AND plaud_note are stored:
+       - raw_transcript: Unprocessed voice-to-text output
+       - plaud_note: PlaudAI's formatted/structured version
+       - Processing prefers plaud_note, falls back to raw
+
+    4. TRANSACTION SAFETY:
+       All operations within single transaction:
+       - Patient + Transcript committed together
+       - Rollback on any failure
+       - No orphaned records possible
+
+FUNCTION REFERENCE:
+
+    get_or_create_patient(db, patient_data) -> Patient
+        PARAMS:
+          db: SQLAlchemy Session
+          patient_data: Dict with keys:
+            - athena_mrn (required): Unique patient identifier
+            - first_name, last_name: Name fields
+            - dob: Date of birth
+            - birth_sex, race, zip_code: Demographics
+        RETURNS: Patient ORM object (new or existing)
+        BEHAVIOR:
+          - Existing: Updates changed fields, logs updates
+          - New: Creates record, logs creation
+        RAISES: ValueError on IntegrityError (duplicate MRN race condition)
+
+    upload_transcript(db, patient_data, raw_transcript, ...) -> Dict
+        PARAMS:
+          db: SQLAlchemy Session
+          patient_data: Dict (see above)
+          raw_transcript: str - Voice-to-text output
+          plaud_note: str (optional) - Formatted note
+          title: str - Display title
+          visit_type: str - Visit category
+          recording_duration: float - Length in seconds
+          recording_date: datetime - When recorded
+          plaud_recording_id: str - PlaudAI's ID
+          auto_process: bool - Run parser (default True)
+        RETURNS: Dict with:
+          - patient_id, transcript_id, pvi_procedure_id
+          - tags, confidence_score
+          - sections_found, pvi_fields_extracted
+        RAISES: HTTPException on failure (after rollback)
+
+    create_pvi_procedure(db, patient_id, transcript_id, pvi_fields) -> int
+        PARAMS:
+          db: SQLAlchemy Session
+          patient_id: int - FK to patients
+          transcript_id: int - FK to voice_transcripts
+          pvi_fields: Dict - Extracted registry fields
+        RETURNS: int - New procedure ID
+        BEHAVIOR: Sets procedure_date to today if not in pvi_fields
+
+    batch_upload_transcripts(db, items) -> Dict
+        PARAMS:
+          db: SQLAlchemy Session
+          items: List[Dict] - Each with patient_data and transcript_text
+        RETURNS: Dict with:
+          - total, successful, failed counts
+          - details: List of per-item results
+        BEHAVIOR: Continues on individual failures (partial success allowed)
+
+    get_patient_transcripts(db, patient_id) -> List[VoiceTranscript]
+        Simple query wrapper for patient's transcripts
+
+    get_patient_procedures(db, patient_id) -> List[PVIProcedure]
+        Simple query wrapper for patient's procedures
+
+    search_patients(db, search_term) -> List[Patient]
+        PARAMS: search_term - Partial name or MRN
+        RETURNS: Matching patients (case-insensitive LIKE search)
+        SEARCHES: first_name, last_name, athena_mrn
+
+LOGGING STRATEGY:
+    Comprehensive logging at INFO/DEBUG levels:
+    - Patient lookups: "Looking up patient by MRN: ..."
+    - Patient creation: "Creating new patient record..."
+    - Demographic updates: "Updated demographics: field1, field2"
+    - Parsing results: "Confidence: 0.85, Tags: 12, PVI fields: 8"
+    - PVI creation: "Creating PVI procedure record..."
+    - Errors: Full stack traces via exc_info=True
+
+SECURITY MODEL:
+    - No authentication in this module (handled by API layer)
+    - SQL injection prevented via ORM parameterization
+    - IntegrityError caught to prevent information disclosure
+
+MAINTENANCE NOTES:
+    - Add new patient fields: Update patient_data dict handling
+    - Add new transcript fields: Update VoiceTranscript creation
+    - Modify PVI threshold: Change "len(pvi_fields) >= 3" check
+    - Add batch validation: Wrap individual items in try/except
+
+ERROR HANDLING:
+    - IntegrityError: Rollback + ValueError with safe message
+    - General Exception: Rollback + re-raise with logging
+    - Batch mode: Log failures, continue processing
+
+VERSION: 2.0.0
+LAST UPDATED: 2025-12
+=============================================================================
 """
 import logging
 from datetime import datetime

@@ -40,3 +40,8 @@ ALLOWED_EXTENSIONS = {".txt", ".json", ".md"}
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = os.getenv("LOG_FILE", "logs/plaudai_uploader.log")
+
+# Medical Mirror Observer Telemetry
+# Observer runs on MacBook Pro via Tailscale at port 3000
+# Set to empty string to disable telemetry
+OBSERVER_URL = os.getenv("OBSERVER_URL", "http://100.113.243.36:3000")

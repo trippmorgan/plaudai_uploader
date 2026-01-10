@@ -18,6 +18,9 @@ pydantic-settings==2.1.0
 # AI/ML - Gemini for Clinical Synopsis Generation
 google-generativeai==0.3.2
 
+# HTTP Client (for telemetry)
+httpx==0.28.1
+
 # Utilities
 python-dotenv==1.0.0
 google-generativeai

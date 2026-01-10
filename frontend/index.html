@@ -1254,6 +1254,153 @@ const patients = await searchRes.json();
             alert(`Error: ${error.message}`);
         }
     }
+
+    // ==================== URL HASH ROUTING ====================
+    // Enables direct navigation to tabs via URL hash (e.g., /#upload, /#emr)
+    
+    function handleHashChange() {
+        const hash = window.location.hash.slice(1); // Remove #
+        if (hash && ['upload', 'search', 'emr', 'query'].includes(hash)) {
+            switchTab(hash);
+        }
+    }
+    
+    // Override switchTab to update URL hash
+    const originalSwitchTab = switchTab;
+    switchTab = function(tabName) {
+        originalSwitchTab(tabName);
+        window.location.hash = tabName;
+    };
+    
+    // Handle hash on page load and hash changes
+    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('DOMContentLoaded', handleHashChange);
+    
+    // Also check hash immediately in case DOMContentLoaded already fired
+    if (document.readyState !== 'loading') {
+        handleHashChange();
+    }
+
+    // ==================== SCC INTEGRATION ====================
+    // Enables bidirectional communication when embedded in Surgical Command Center
+
+    const SCC_INTEGRATION = {
+        isEmbedded: window.parent !== window,
+        currentMrn: null,
+        currentPatientName: null,
+
+        /**
+         * Notify parent SCC when a patient is selected in VAI
+         */
+        notifyPatientSelected(mrn, patientName) {
+            if (!this.isEmbedded) return;
+
+            this.currentMrn = mrn;
+            this.currentPatientName = patientName;
+
+            console.log('[VAI-SCC] Notifying parent of patient selection:', mrn);
+            window.parent.postMessage({
+                type: 'PATIENT_SELECTED',
+                mrn: mrn,
+                patientName: patientName,
+                source: 'vai-clinical'
+            }, '*');
+        },
+
+        /**
+         * Load patient by MRN (called when SCC sends context or URL has MRN)
+         */
+        loadPatientByMRN(mrn) {
+            if (!mrn) return;
+
+            console.log('[VAI-SCC] Loading patient by MRN:', mrn);
+            document.getElementById('emrMrnSearch').value = mrn;
+            switchTab('emr');
+            loadPatientRecords();
+        },
+
+        /**
+         * Parse MRN from URL query parameters
+         * Supports: ?mrn=XXX or #emr?mrn=XXX
+         */
+        getMRNFromURL() {
+            // Check regular query params first
+            let params = new URLSearchParams(window.location.search);
+            if (params.get('mrn')) return params.get('mrn');
+
+            // Check hash-based params (e.g., #emr?mrn=XXX)
+            const hash = window.location.hash;
+            if (hash.includes('?')) {
+                params = new URLSearchParams(hash.split('?')[1]);
+                if (params.get('mrn')) return params.get('mrn');
+            }
+
+            return null;
+        },
+
+        /**
+         * Initialize SCC integration listeners
+         */
+        init() {
+            console.log('[VAI-SCC] Initializing integration. Embedded:', this.isEmbedded);
+
+            // Listen for patient context from parent SCC
+            window.addEventListener('message', (event) => {
+                // Handle patient context from SCC
+                if (event.data && event.data.type === 'PATIENT_CONTEXT_LOADED' && event.data.mrn) {
+                    console.log('[VAI-SCC] Received patient context from SCC:', event.data.mrn);
+                    this.loadPatientByMRN(event.data.mrn);
+                }
+
+                // Handle patient selection request from SCC
+                if (event.data && event.data.type === 'SELECT_PATIENT' && event.data.mrn) {
+                    console.log('[VAI-SCC] Received select patient request:', event.data.mrn);
+                    this.loadPatientByMRN(event.data.mrn);
+                }
+            });
+
+            // Check URL for MRN parameter on load
+            const urlMrn = this.getMRNFromURL();
+            if (urlMrn) {
+                console.log('[VAI-SCC] Found MRN in URL:', urlMrn);
+                // Small delay to ensure DOM is ready
+                setTimeout(() => this.loadPatientByMRN(urlMrn), 100);
+            }
+
+            // Notify parent that VAI is ready
+            if (this.isEmbedded) {
+                window.parent.postMessage({
+                    type: 'VAI_READY',
+                    source: 'vai-clinical'
+                }, '*');
+            }
+        }
+    };
+
+    // Hook into existing patient selection functions to notify SCC
+    const originalViewPatientRecords = viewPatientRecords;
+    viewPatientRecords = function(mrn) {
+        originalViewPatientRecords(mrn);
+        // Get patient name from the list if available
+        const patientItem = document.querySelector(`.patient-item[onclick*="${mrn}"]`);
+        const patientName = patientItem ? patientItem.querySelector('.patient-name')?.textContent : null;
+        SCC_INTEGRATION.notifyPatientSelected(mrn, patientName);
+    };
+
+    // Also notify when loading records directly
+    const originalLoadPatientRecords = loadPatientRecords;
+    loadPatientRecords = async function() {
+        await originalLoadPatientRecords();
+        // After successful load, get patient info and notify
+        const mrn = document.getElementById('emrPatientMrn')?.textContent;
+        const name = document.getElementById('emrPatientName')?.textContent;
+        if (mrn) {
+            SCC_INTEGRATION.notifyPatientSelected(mrn, name);
+        }
+    };
+
+    // Initialize SCC integration
+    SCC_INTEGRATION.init();
 </script>
 </body>
 </html>
