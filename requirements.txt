@@ -1,15 +1,10 @@
-# PlaudAI Uploader - Python Dependencies
+# PlaudAI Processor - Python Dependencies
+# Version 2.0.0 - Stateless AI Processing Service
 
 # Web Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-fpdf2==2.7.6
-
-# Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.12.1
 
 # Data Validation
 pydantic==2.5.0
@@ -18,9 +13,17 @@ pydantic-settings==2.1.0
 # AI/ML - Gemini for Clinical Synopsis Generation
 google-generativeai==0.3.2
 
-# HTTP Client (for telemetry)
+# HTTP Client (for potential future integrations)
 httpx==0.28.1
 
 # Utilities
 python-dotenv==1.0.0
-google-generativeai
+
+# NOTE: Database dependencies removed in v2.0.0
+# - sqlalchemy (no longer needed - SCC owns data)
+# - psycopg2-binary (no longer needed - SCC owns data)
+# - alembic (no longer needed - SCC owns migrations)
+# - fpdf2 (moved to SCC for PDF generation)
+#
+# For legacy mode (main_legacy.py), install:
+# pip install sqlalchemy==2.0.23 psycopg2-binary==2.9.9 alembic==1.12.1 fpdf2==2.7.6

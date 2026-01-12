@@ -1,0 +1,32 @@
+[Unit]
+Description=PlaudAI Processor - Stateless AI Service
+After=network.target
+Documentation=https://github.com/server1/plaudai_uploader
+
+[Service]
+Type=simple
+User=server1
+Group=server1
+WorkingDirectory=/home/server1/plaudai_uploader
+
+# Load environment from .env file
+EnvironmentFile=/home/server1/plaudai_uploader/.env
+
+# Use conda environment
+ExecStart=/home/server1/miniconda3/envs/plaudai/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8001
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=plaudai
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
