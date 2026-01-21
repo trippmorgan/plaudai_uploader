@@ -143,6 +143,9 @@ from .services.telemetry import (
 # Athena Integration Router
 from .routes.ingest import router as ingest_router
 
+# ORCC Integration Router
+from .routes.orcc import router as orcc_router
+
 # ==================== Logging Setup ====================
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -189,6 +192,7 @@ app.add_middleware(
 
 # ==================== Register Routers ====================
 app.include_router(ingest_router)  # Athena Integration: /ingest/*
+app.include_router(orcc_router)    # ORCC Integration: /api/procedures, /api/patients
 
 # ==================== Startup & Health ====================
 

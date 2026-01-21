@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "updated": 1768978689320,
+  "naming": {},
+  "directories": {
+    "services": {
+      "purpose": "Service layer",
+      "files": 3
+    },
+    "routes": {
+      "purpose": "API endpoints",
+      "files": 2
+    }
+  },
+  "suffixes": {}
+}

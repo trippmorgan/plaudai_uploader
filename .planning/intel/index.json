@@ -1,0 +1,457 @@
+{
+  "version": 1,
+  "updated": 1768978689320,
+  "files": {
+    "/home/server1/plaudai_uploader/backend/main.py": {
+      "exports": [
+        "app",
+        "ParseRequest",
+        "ParseResponse",
+        "SynopsisRequest",
+        "SynopsisResponse",
+        "ExtractRequest",
+        "ExtractResponse",
+        "health",
+        "parse_transcript",
+        "generate_synopsis",
+        "extract_pvi"
+      ],
+      "imports": [
+        "os",
+        "logging",
+        "datetime",
+        "typing",
+        "fastapi",
+        "pydantic",
+        ".services.parser",
+        ".services.gemini_synopsis_stateless"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/config.py": {
+      "exports": [
+        "BASE_DIR",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_NAME",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DATABASE_URL",
+        "API_HOST",
+        "API_PORT",
+        "DEBUG",
+        "GOOGLE_API_KEY",
+        "GEMINI_MODEL",
+        "PVI_ENABLED",
+        "MAX_UPLOAD_SIZE",
+        "ALLOWED_EXTENSIONS",
+        "LOG_LEVEL",
+        "LOG_FILE",
+        "OBSERVER_URL"
+      ],
+      "imports": [
+        "os",
+        "pathlib",
+        "dotenv"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/logging_config.py": {
+      "exports": [
+        "configure_logging"
+      ],
+      "imports": [
+        "logging",
+        "logging.handlers",
+        "os",
+        "sys",
+        "pathlib",
+        ".config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/test_database.py": {
+      "exports": [
+        "print_section",
+        "test_connection",
+        "verify_tables",
+        "verify_indexes",
+        "test_insert_patient",
+        "test_insert_transcript",
+        "test_mrn_lookup",
+        "print_summary",
+        "main"
+      ],
+      "imports": [
+        "psycopg2",
+        "os",
+        "dotenv",
+        "datetime"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/test_env.py": {
+      "exports": [],
+      "imports": [
+        "dotenv",
+        "os"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/main_legacy.py": {
+      "exports": [
+        "app",
+        "log_requests",
+        "startup_event",
+        "health_check",
+        "upload_note",
+        "upload_medical_record",
+        "upload_file",
+        "list_patients",
+        "get_patient",
+        "list_patient_transcripts",
+        "list_patient_procedures",
+        "get_transcript",
+        "get_records_by_category",
+        "get_emr_chart",
+        "get_statistics",
+        "generate_synopsis",
+        "get_patient_synopses",
+        "get_synopsis_by_id",
+        "get_clinical_patient_summary",
+        "clinical_query_endpoint",
+        "generate_pdf_for_record",
+        "generate_synopsis_pdf_endpoint"
+      ],
+      "imports": [
+        "os",
+        "time",
+        "uuid",
+        "logging",
+        "typing",
+        "datetime",
+        "fastapi",
+        "sqlalchemy.orm",
+        ".db",
+        ".config",
+        ".logging_config",
+        ".models",
+        ".schemas",
+        ".services.uploader",
+        ".services.gemini_synopsis",
+        ".services.parser",
+        ".services.category_parser",
+        ".services.clinical_query",
+        ".services.gemini_parser",
+        ".services.telemetry",
+        ".routes.ingest"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/services/parser.py": {
+      "exports": [
+        "segment_summary",
+        "generate_tags",
+        "extract_pvi_fields",
+        "calculate_confidence_score",
+        "process_transcript"
+      ],
+      "imports": [
+        "re",
+        "typing",
+        "logging"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/services/gemini_synopsis_stateless.py": {
+      "exports": [
+        "calculate_age",
+        "build_synopsis_prompt",
+        "parse_synopsis_sections",
+        "generate_synopsis_stateless"
+      ],
+      "imports": [
+        "google.generativeai",
+        "typing",
+        "logging",
+        "time",
+        "os"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/services/category_parser.py": {
+      "exports": [
+        "PROMPTS",
+        "parse_by_category",
+        "generate_category_summary"
+      ],
+      "imports": [
+        "google.generativeai",
+        "json",
+        "logging",
+        "typing",
+        "..config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/db.py": {
+      "exports": [
+        "engine",
+        "SessionLocal",
+        "Base",
+        "get_db",
+        "get_db_context",
+        "init_db",
+        "check_connection"
+      ],
+      "imports": [
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "sqlalchemy.pool",
+        "contextlib",
+        "logging",
+        ".config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/models.py": {
+      "exports": [
+        "Patient",
+        "VoiceTranscript",
+        "ClinicalSynopsis",
+        "PVIProcedure"
+      ],
+      "imports": [
+        "sqlalchemy",
+        "sqlalchemy.sql",
+        "sqlalchemy.orm",
+        ".db"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/schemas.py": {
+      "exports": [
+        "PatientBase",
+        "PatientCreate",
+        "PatientResponse",
+        "TranscriptBase",
+        "TranscriptUpload",
+        "TranscriptResponse",
+        "SynopsisRequest",
+        "SynopsisResponse",
+        "PatientSummary",
+        "PVIProcedureBase",
+        "PVIProcedureCreate",
+        "PVIProcedureResponse",
+        "UploadResponse",
+        "BatchUploadItem",
+        "BatchUploadRequest",
+        "BatchUploadResponse"
+      ],
+      "imports": [
+        "pydantic",
+        "typing",
+        "datetime"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/uploader.py": {
+      "exports": [
+        "get_or_create_patient",
+        "upload_transcript",
+        "create_pvi_procedure",
+        "batch_upload_transcripts",
+        "get_patient_transcripts",
+        "get_patient_procedures",
+        "search_patients"
+      ],
+      "imports": [
+        "logging",
+        "datetime",
+        "typing",
+        "sqlalchemy.orm",
+        "sqlalchemy.exc",
+        "..models",
+        ".parser"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/gemini_synopsis.py": {
+      "exports": [
+        "gather_patient_data",
+        "calculate_age",
+        "build_synopsis_prompt",
+        "generate_clinical_synopsis",
+        "parse_synopsis_sections",
+        "get_latest_synopsis",
+        "get_all_synopses",
+        "get_patient_summary"
+      ],
+      "imports": [
+        "google.generativeai",
+        "sqlalchemy.orm",
+        "typing",
+        "json",
+        "logging",
+        "time",
+        "datetime",
+        "..models",
+        "..config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/gemini_parser.py": {
+      "exports": [
+        "OPERATIVE_NOTE_PROMPT",
+        "IMAGING_PROMPT",
+        "LAB_RESULT_PROMPT",
+        "OFFICE_VISIT_PROMPT",
+        "parse_with_gemini",
+        "generate_record_summary"
+      ],
+      "imports": [
+        "google.generativeai",
+        "json",
+        "logging",
+        "typing",
+        "..config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/clinical_query.py": {
+      "exports": [
+        "extract_patient_from_query",
+        "extract_by_word_matching",
+        "extract_by_mrn",
+        "extract_by_full_name",
+        "extract_by_last_name",
+        "search_by_name_pair",
+        "build_query_prompt",
+        "process_clinical_query"
+      ],
+      "imports": [
+        "re",
+        "logging",
+        "typing",
+        "sqlalchemy.orm",
+        "sqlalchemy",
+        "google.generativeai",
+        "..models",
+        "..config",
+        ".gemini_synopsis"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/telemetry.py": {
+      "exports": [
+        "emit",
+        "emit_sync",
+        "emit_upload_received",
+        "emit_upload_processed",
+        "emit_upload_failed",
+        "emit_patients_queried",
+        "emit_clinical_query",
+        "emit_clinical_response",
+        "emit_ingest_received",
+        "emit_ingest_processed",
+        "emit_clinical_fetch",
+        "emit_clinical_fetch_success"
+      ],
+      "imports": [
+        "asyncio",
+        "logging",
+        "time",
+        "typing",
+        "datetime",
+        "httpx",
+        "..config"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/pdf_generator.py": {
+      "exports": [
+        "sanitize_text",
+        "MedicalRecordPDF",
+        "generate_operative_note_pdf",
+        "generate_imaging_pdf",
+        "generate_lab_results_pdf",
+        "generate_office_visit_pdf",
+        "generate_synopsis_pdf",
+        "parse_synopsis_sections",
+        "generate_medical_record_pdf"
+      ],
+      "imports": [
+        "fpdf",
+        "datetime",
+        "typing",
+        "os",
+        "logging"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/models_athena.py": {
+      "exports": [
+        "generate_uuid",
+        "ClinicalEvent",
+        "StructuredFinding",
+        "FindingEvidence",
+        "AthenaDocument",
+        "IntegrationAuditLog"
+      ],
+      "imports": [
+        "uuid",
+        "datetime",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        ".db"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/routes/__init__.py": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/_legacy/routes/ingest.py": {
+      "exports": [
+        "router",
+        "AthenaEventPayload",
+        "IngestResponse",
+        "generate_idempotency_key",
+        "log_audit",
+        "parse_timestamp",
+        "ingest_athena_event",
+        "get_patient_events",
+        "get_ingestion_stats",
+        "get_patient_clinical",
+        "health_check"
+      ],
+      "imports": [
+        "hashlib",
+        "json",
+        "logging",
+        "datetime",
+        "typing",
+        "fastapi",
+        "pydantic",
+        "sqlalchemy.orm",
+        "sqlalchemy",
+        "..db",
+        "..models",
+        "..models_athena",
+        "..services.telemetry"
+      ],
+      "indexed": 1737360330000
+    },
+    "/home/server1/claude-team/mcp-server-standalone.mjs": {
+      "exports": [],
+      "imports": [
+        "@modelcontextprotocol/sdk/server/index.js",
+        "@modelcontextprotocol/sdk/server/stdio.js",
+        "@modelcontextprotocol/sdk/types.js",
+        "ws"
+      ],
+      "indexed": 1768978689320
+    }
+  }
+}

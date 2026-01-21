@@ -81,6 +81,9 @@ from .services.gemini_synopsis_stateless import (
     calculate_age
 )
 
+# ORCC Integration Router (database-backed endpoints)
+from .routes.orcc import router as orcc_router
+
 # ==================== Logging Setup ====================
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -109,9 +112,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],  # Extended for ORCC
     allow_headers=["*"],
 )
+
+# ==================== Register ORCC Router ====================
+app.include_router(orcc_router)  # ORCC Integration: /api/procedures, /api/patients
 
 # ==================== Request/Response Models ====================
 
