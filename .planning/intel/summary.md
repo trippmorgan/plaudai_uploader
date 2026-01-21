@@ -1,23 +1,11 @@
-# Codebase Intelligence
+# Codebase Intelligence Summary
 
-**Indexed entities:** 16
-**Last updated:** 2026-01-21
+Last updated: 2026-01-21T16:42:35.868Z
+Indexed files: 22
 
-## Dependency Hotspots
+## Key Directories
 
-Files with most dependents (change carefully):
-1. `backend--legacy-config` (5 dependents)
-1. `/home/server1/plaudai_uploader/backend/_legacy/models.py` (5 dependents) [model]
-1. `/home/server1/plaudai_uploader/backend/_legacy/db.py` (4 dependents) [util]
-1. `/home/server1/plaudai_uploader/backend/services/parser.py` (3 dependents) [service]
-1. `/home/server1/plaudai_uploader/backend/_legacy/gemini_synopsis.py` (2 dependents) [service]
+- `services/`: Service layer (3 files)
+- `routes/`: API endpoints (2 files)
 
-## Module Types
-
-- **Service**: 8 files
-- **Model**: 3 files
-- **Api**: 3 files
-- **Util**: 1 files
-- **Config**: 1 files
-
-**Relationships tracked:** 29
+Total exports: 167

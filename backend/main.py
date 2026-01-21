@@ -84,6 +84,15 @@ from .services.gemini_synopsis_stateless import (
 # ORCC Integration Router (database-backed endpoints)
 from .routes.orcc import router as orcc_router
 
+# Shadow Coder Router (migrated from SCC)
+from .routes.shadow_coder import router as shadow_coder_router
+
+# Tasks Router (new for ORCC)
+from .routes.tasks import router as tasks_router
+
+# WebSocket Server
+from .websocket_server import websocket_endpoint, manager as ws_manager
+
 # ==================== Logging Setup ====================
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -101,11 +110,16 @@ app = FastAPI(
 )
 
 # ==================== CORS Configuration ====================
-# Restricted to SCC origins only - no wildcard in production
+# Allow SCC, ORCC, and local development
 ALLOWED_ORIGINS = [
     "http://localhost:3001",           # SCC development
     "http://127.0.0.1:3001",           # SCC local
     "http://100.75.237.36:3001",       # SCC on Server1 (Tailscale)
+    "http://localhost:5173",           # ORCC Vite dev server
+    "http://127.0.0.1:5173",           # ORCC Vite local
+    "http://100.104.39.64:5173",       # ORCC on Workstation (Tailscale)
+    "http://100.104.39.64:3000",       # ORCC production build
+    "*",                               # Allow all for development - restrict in production
 ]
 
 app.add_middleware(
@@ -118,6 +132,25 @@ app.add_middleware(
 
 # ==================== Register ORCC Router ====================
 app.include_router(orcc_router)  # ORCC Integration: /api/procedures, /api/patients
+
+# ==================== Register Shadow Coder Router ====================
+app.include_router(shadow_coder_router)  # Shadow Coder: /api/shadow-coder/*
+
+# ==================== Register Tasks Router ====================
+app.include_router(tasks_router)  # Tasks: /api/tasks/*
+
+# ==================== WebSocket Endpoint ====================
+from fastapi import WebSocket, Query as WSQuery
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket, client_id: str = WSQuery(None)):
+    """WebSocket endpoint for real-time updates."""
+    await websocket_endpoint(websocket, client_id)
+
+@app.get("/ws/stats")
+async def ws_stats():
+    """Get WebSocket connection statistics."""
+    return ws_manager.get_stats()
 
 # ==================== Request/Response Models ====================
 

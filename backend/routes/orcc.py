@@ -82,6 +82,74 @@ class ProcedureUpdate(BaseModel):
     stress_test_status: Optional[str] = None
     vqi_case_id: Optional[str] = None
     status: Optional[str] = None  # draft, in_progress, completed, finalized
+    # New fields for endovascular planning
+    procedure_name: Optional[str] = None
+    indication: Optional[Dict[str, Any]] = None
+    access_details: Optional[Dict[str, Any]] = None
+    inflow_status: Optional[Dict[str, str]] = None
+    outflow_status: Optional[Dict[str, str]] = None
+    vessel_data: Optional[Dict[str, Any]] = None
+    interventions: Optional[List[Dict[str, Any]]] = None
+    cpt_codes: Optional[List[str]] = None
+    findings: Optional[str] = None
+    results: Optional[str] = None
+
+
+# ==================== Endovascular Planning Models ====================
+
+class IndicationData(BaseModel):
+    primary_icd10: str
+    primary_icd10_text: Optional[str] = None
+    secondary_icd10: Optional[str] = None
+    secondary_icd10_text: Optional[str] = None
+    rutherford: Optional[str] = None  # r3, r4, r5, r6
+
+class AccessData(BaseModel):
+    site: Optional[str] = None  # r_cfa, l_cfa, brachial, pedal
+    sheath_size: Optional[str] = None  # 4, 5, 6, 7, 8
+    anesthesia: Optional[str] = None  # mac_local, local, general
+
+class VesselStatus(BaseModel):
+    status: str  # patent, stenosis_mild, stenosis_mod, stenosis_severe, occluded
+    length: Optional[str] = None  # <5cm, 5-10cm, 10-20cm, >20cm
+    intervention: Optional[str] = None
+    notes: Optional[str] = None
+
+class InterventionData(BaseModel):
+    vessel: str  # "L SFA", "R Popliteal", etc.
+    vessel_id: str  # "l_sfa", "r_popliteal", etc.
+    status: str
+    length: Optional[str] = None
+    intervention: str  # pta, stent, atherectomy, pta_stent, ath_pta, ath_pta_stent
+    notes: Optional[str] = None
+
+class ProcedureCreate(BaseModel):
+    """Full procedure creation model for endovascular planning."""
+    mrn: str
+    patient_name: Optional[str] = None  # Will be looked up if not provided
+    procedure_type: Optional[str] = "Lower Extremity Angiogram"
+    procedure_name: Optional[str] = None
+    procedure_side: Optional[str] = None  # left, right, bilateral
+    procedure_date: Optional[date] = None
+    scheduled_location: Optional[str] = "ASC"  # ASC, CRH, AUMC
+    status: Optional[str] = "draft"  # draft, in_progress, completed, finalized
+    surgical_status: Optional[str] = "workup"  # ready, near_ready, workup, hold
+    surgeon: Optional[str] = None
+    barriers: Optional[List[str]] = []
+    cardiology_clearance: Optional[bool] = None
+    stress_test_status: Optional[str] = None
+    vqi_case_id: Optional[str] = None
+
+    # Endovascular planning fields
+    indication: Optional[Dict[str, Any]] = None
+    access: Optional[Dict[str, Any]] = None
+    inflow: Optional[Dict[str, str]] = None
+    outflow: Optional[Dict[str, str]] = None
+    vessel_data: Optional[Dict[str, Any]] = None
+    interventions: Optional[List[Dict[str, Any]]] = None
+    cpt_codes: Optional[List[str]] = None
+    findings: Optional[str] = None
+    results: Optional[str] = None
 
 class ProcedureResponse(ProcedureBase):
     id: str
@@ -162,7 +230,7 @@ async def list_procedures(
     params = {}
 
     if surgical_status:
-        query += " AND surgical_status = :surgical_status::enum_surgical_status"
+        query += " AND surgical_status = CAST(:surgical_status AS enum_surgical_status)"
         params["surgical_status"] = surgical_status
 
     if patient_mrn:
@@ -174,7 +242,7 @@ async def list_procedures(
         params["scheduled_location"] = scheduled_location
 
     if status:
-        query += " AND status = :status::enum_procedures_status"
+        query += " AND status = CAST(:status AS enum_procedures_status)"
         params["status"] = status
 
     query += " ORDER BY procedure_date DESC NULLS LAST, \"createdAt\" DESC"
@@ -223,7 +291,7 @@ async def get_procedure(procedure_id: str, db: Session = Depends(get_db)):
             superficial_femoral, profunda, popliteal, anterior_tibial,
             posterior_tibial, peroneal
         FROM procedures
-        WHERE id = :procedure_id::uuid
+        WHERE id = CAST(:procedure_id AS uuid)
     """
     result = db.execute(text(query), {"procedure_id": procedure_id})
     row = result.fetchone()
@@ -287,11 +355,11 @@ async def update_procedure(
     params = {"procedure_id": procedure_id}
 
     if updates.surgical_status is not None:
-        update_fields.append("surgical_status = :surgical_status::enum_surgical_status")
+        update_fields.append("surgical_status = CAST(:surgical_status AS enum_surgical_status)")
         params["surgical_status"] = updates.surgical_status
 
     if updates.barriers is not None:
-        update_fields.append("barriers = :barriers::jsonb")
+        update_fields.append("barriers = CAST(:barriers AS jsonb)")
         params["barriers"] = updates.barriers
 
     if updates.cardiology_clearance is not None:
@@ -299,7 +367,7 @@ async def update_procedure(
         params["cardiology_clearance"] = updates.cardiology_clearance
 
     if updates.stress_test_status is not None:
-        update_fields.append("stress_test_status = :stress_test_status::enum_stress_test_status")
+        update_fields.append("stress_test_status = CAST(:stress_test_status AS enum_stress_test_status)")
         params["stress_test_status"] = updates.stress_test_status
 
     if updates.scheduled_location is not None:
@@ -311,7 +379,7 @@ async def update_procedure(
         params["vqi_case_id"] = updates.vqi_case_id
 
     if updates.status is not None:
-        update_fields.append("status = :status::enum_procedures_status")
+        update_fields.append("status = CAST(:status AS enum_procedures_status)")
         params["status"] = updates.status
 
     if updates.surgeon is not None:
@@ -327,7 +395,7 @@ async def update_procedure(
         params["procedure_type"] = updates.procedure_type
 
     if updates.procedure_side is not None:
-        update_fields.append("procedure_side = :procedure_side::enum_procedures_procedure_side")
+        update_fields.append("procedure_side = CAST(:procedure_side AS enum_procedures_procedure_side)")
         params["procedure_side"] = updates.procedure_side
 
     if not update_fields:
@@ -339,7 +407,7 @@ async def update_procedure(
     query = f"""
         UPDATE procedures
         SET {', '.join(update_fields)}
-        WHERE id = :procedure_id::uuid
+        WHERE id = CAST(:procedure_id AS uuid)
         RETURNING id::text
     """
 
@@ -351,6 +419,223 @@ async def update_procedure(
 
     # Return updated procedure
     return await get_procedure(procedure_id, db)
+
+
+@router.post("/procedures", response_model=Dict[str, Any], status_code=201)
+async def create_procedure(procedure: ProcedureCreate, db: Session = Depends(get_db)):
+    """
+    Create a new procedure for a patient.
+
+    This endpoint supports full endovascular planning data including:
+    - Indication/ICD-10 codes
+    - Access details
+    - Inflow/outflow status
+    - Vessel anatomy data
+    - Planned interventions
+    - CPT codes
+
+    Patient name will be looked up from MRN if not provided.
+    """
+    import json
+    from uuid import uuid4
+
+    # Look up patient by MRN to get name if not provided
+    patient_name = procedure.patient_name
+    if not patient_name:
+        patient_query = text("""
+            SELECT CONCAT(last_name, ', ', first_name) as full_name
+            FROM scc_patients
+            WHERE mrn = :mrn
+            LIMIT 1
+        """)
+        patient_result = db.execute(patient_query, {"mrn": procedure.mrn})
+        patient_row = patient_result.fetchone()
+        if patient_row:
+            patient_name = patient_row[0]
+        else:
+            patient_name = f"Unknown ({procedure.mrn})"
+
+    procedure_id = str(uuid4())
+
+    # Build insert query with all fields
+    sql = text("""
+        INSERT INTO procedures (
+            id, mrn, patient_name, procedure_type, procedure_name, procedure_side,
+            procedure_date, scheduled_location, status, surgical_status,
+            surgeon, barriers, cardiology_clearance, stress_test_status, vqi_case_id,
+            indication, access_details, inflow_status, outflow_status,
+            vessel_data, interventions, cpt_codes, findings, results,
+            "createdAt", "updatedAt"
+        ) VALUES (
+            CAST(:id AS uuid),
+            :mrn,
+            :patient_name,
+            :procedure_type,
+            :procedure_name,
+            CAST(:procedure_side AS enum_procedures_procedure_side),
+            :procedure_date,
+            :scheduled_location,
+            CAST(:status AS enum_procedures_status),
+            CAST(:surgical_status AS enum_surgical_status),
+            :surgeon,
+            CAST(:barriers AS jsonb),
+            :cardiology_clearance,
+            CAST(:stress_test_status AS enum_stress_test_status),
+            :vqi_case_id,
+            CAST(:indication AS jsonb),
+            CAST(:access_details AS jsonb),
+            CAST(:inflow_status AS jsonb),
+            CAST(:outflow_status AS jsonb),
+            CAST(:vessel_data AS jsonb),
+            CAST(:interventions AS jsonb),
+            CAST(:cpt_codes AS jsonb),
+            :findings,
+            :results,
+            NOW(),
+            NOW()
+        )
+        RETURNING id::text
+    """)
+
+    try:
+        result = db.execute(sql, {
+            "id": procedure_id,
+            "mrn": procedure.mrn,
+            "patient_name": patient_name,
+            "procedure_type": procedure.procedure_type,
+            "procedure_name": procedure.procedure_name,
+            "procedure_side": procedure.procedure_side,
+            "procedure_date": procedure.procedure_date,
+            "scheduled_location": procedure.scheduled_location,
+            "status": procedure.status or "draft",
+            "surgical_status": procedure.surgical_status or "workup",
+            "surgeon": procedure.surgeon,
+            "barriers": json.dumps(procedure.barriers or []),
+            "cardiology_clearance": procedure.cardiology_clearance,
+            "stress_test_status": procedure.stress_test_status,
+            "vqi_case_id": procedure.vqi_case_id,
+            "indication": json.dumps(procedure.indication or {}),
+            "access_details": json.dumps(procedure.access or {}),
+            "inflow_status": json.dumps(procedure.inflow or {}),
+            "outflow_status": json.dumps(procedure.outflow or {}),
+            "vessel_data": json.dumps(procedure.vessel_data or {}),
+            "interventions": json.dumps(procedure.interventions or []),
+            "cpt_codes": json.dumps(procedure.cpt_codes or []),
+            "findings": procedure.findings,
+            "results": procedure.results
+        })
+        db.commit()
+
+        # Return the created procedure
+        return {
+            "id": procedure_id,
+            "mrn": procedure.mrn,
+            "patient_name": patient_name,
+            "procedure_type": procedure.procedure_type,
+            "procedure_name": procedure.procedure_name,
+            "procedure_side": procedure.procedure_side,
+            "procedure_date": str(procedure.procedure_date) if procedure.procedure_date else None,
+            "scheduled_location": procedure.scheduled_location,
+            "status": procedure.status or "draft",
+            "surgical_status": procedure.surgical_status or "workup",
+            "indication": procedure.indication or {},
+            "access": procedure.access or {},
+            "inflow": procedure.inflow or {},
+            "outflow": procedure.outflow or {},
+            "vessel_data": procedure.vessel_data or {},
+            "interventions": procedure.interventions or [],
+            "cpt_codes": procedure.cpt_codes or [],
+            "message": "Procedure created successfully"
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create procedure: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/planning/{mrn}", response_model=Dict[str, Any])
+async def get_planning_data(mrn: str, db: Session = Depends(get_db)):
+    """
+    Get planning data for a patient by MRN.
+
+    Returns the most recent planned procedure with full vessel data,
+    interventions, and ICD-10/CPT codes for the workspace to load.
+    """
+    # Get patient info
+    patient_query = text("""
+        SELECT id::text, mrn, first_name, last_name
+        FROM scc_patients
+        WHERE mrn = :mrn
+        LIMIT 1
+    """)
+    patient_result = db.execute(patient_query, {"mrn": mrn})
+    patient_row = patient_result.fetchone()
+
+    if not patient_row:
+        raise HTTPException(status_code=404, detail=f"Patient with MRN {mrn} not found")
+
+    # Get most recent procedure with planning data
+    procedure_query = text("""
+        SELECT
+            id::text, mrn, patient_name, procedure_type, procedure_name, procedure_side::text,
+            procedure_date, scheduled_location, status::text, surgical_status::text,
+            indication, access_details, inflow_status, outflow_status,
+            vessel_data, interventions, cpt_codes, findings, results,
+            "createdAt", "updatedAt"
+        FROM procedures
+        WHERE mrn = :mrn
+        ORDER BY "createdAt" DESC
+        LIMIT 1
+    """)
+    proc_result = db.execute(procedure_query, {"mrn": mrn})
+    proc_row = proc_result.fetchone()
+
+    if not proc_row:
+        # Return patient info with empty procedure data
+        return {
+            "patient": {
+                "id": patient_row[0],
+                "mrn": patient_row[1],
+                "name": f"{patient_row[3]}, {patient_row[2]}"
+            },
+            "procedure": None,
+            "indication": {},
+            "vessel_data": {},
+            "interventions": [],
+            "cpt_codes": []
+        }
+
+    return {
+        "patient": {
+            "id": patient_row[0],
+            "mrn": patient_row[1],
+            "name": f"{patient_row[3]}, {patient_row[2]}"
+        },
+        "procedure": {
+            "id": proc_row[0],
+            "mrn": proc_row[1],
+            "patient_name": proc_row[2],
+            "type": proc_row[3],
+            "name": proc_row[4],
+            "side": proc_row[5],
+            "date": proc_row[6].isoformat() if proc_row[6] else None,
+            "location": proc_row[7],
+            "status": proc_row[8],
+            "surgical_status": proc_row[9],
+            "created_at": proc_row[19].isoformat() if proc_row[19] else None,
+            "updated_at": proc_row[20].isoformat() if proc_row[20] else None
+        },
+        "indication": proc_row[10] or {},
+        "access": proc_row[11] or {},
+        "inflow": proc_row[12] or {},
+        "outflow": proc_row[13] or {},
+        "vessel_data": proc_row[14] or {},
+        "interventions": proc_row[15] or [],
+        "cpt_codes": proc_row[16] or [],
+        "findings": proc_row[17],
+        "results": proc_row[18]
+    }
 
 
 # ==================== Patient Endpoints ====================
@@ -557,7 +842,7 @@ async def create_patient(patient: PatientBase, db: Session = Depends(get_db)):
             active, "createdAt", "updatedAt"
         ) VALUES (
             gen_random_uuid(), :mrn, :first_name, :last_name, :middle_name,
-            :date_of_birth, :age, :gender::enum_patients_gender, :phone_primary, :phone_secondary,
+            :date_of_birth, :age, CAST(:gender AS enum_patients_gender), :phone_primary, :phone_secondary,
             :email, :address_line1, :address_line2, :city, :state, :zip_code, :country,
             :emergency_contact_name, :emergency_contact_phone, :emergency_contact_relationship,
             :insurance_provider, :insurance_policy_number, :insurance_group_number,

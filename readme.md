@@ -1,28 +1,100 @@
 # Albany Vascular Specialist Center
 
-## Vascular Surgery AI Uploader and Surgical Note Generator
+## PlaudAI - Unified Vascular Surgery Platform
 
-**Advanced Clinical Documentation System for Vascular Surgery**
+**Advanced Clinical Documentation & Surgical Command System**
 
-An intelligent medical documentation platform that imports voice transcripts, automatically generates structured surgical notes, extracts PVI (Peripheral Vascular Intervention) registry fields, creates AI-powered clinical synopses, and manages comprehensive patient records for the Albany Vascular Specialist Center.
+PlaudAI is the unified backend for Albany Vascular's surgical platform, combining:
+- **Voice-to-Documentation**: Turn voice recordings into structured surgical notes
+- **Shadow Coder**: AI-powered charge coding assistance (PAD compliance)
+- **ORCC Integration**: Real-time surgical readiness tracking
+- **Task Management**: Workflow coordination for surgical teams
+- **EMR Integration**: Bidirectional sync with Athena
 
 ---
 
 ## Quick Start (For Beginners)
 
-**What is this?** A web app that helps doctors turn voice recordings into organized medical notes.
+### What is PlaudAI?
+A web platform that helps vascular surgeons:
+1. **Document**: Turn voice dictations into organized notes
+2. **Code**: Ensure proper charge coding with AI assistance
+3. **Track**: Manage surgical readiness and patient workflows
+4. **Coordinate**: Real-time updates across the surgical team
+
+### Starting the Server
 
 ```bash
+# SSH to Server1
+ssh server1@100.75.237.36
+
+# Start PlaudAI
 cd ~/plaudai_uploader
 conda activate plaudai
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
+uvicorn backend.main:app --host 0.0.0.0 --port 8001
 ```
 
-Open browser: `http://100.75.237.36:8001/index.html`
+### Accessing the System
+
+| Interface | URL | Purpose |
+|-----------|-----|---------|
+| **PlaudAI Web** | http://100.75.237.36:8001/index.html | Voice upload & documentation |
+| **API Docs** | http://100.75.237.36:8001/docs | Interactive API explorer |
+| **Health Check** | http://100.75.237.36:8001/health | Service status |
+
+### Quick API Test
+
+```bash
+# Check server health
+curl http://100.75.237.36:8001/health
+
+# List patients
+curl http://100.75.237.36:8001/api/patients
+
+# Create a task
+curl -X POST http://100.75.237.36:8001/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Pre-op workup", "patient_mrn": "12345", "priority": "high"}'
+```
 
 ---
 
-## Architecture Overview (Why Port 8001?)
+## Architecture Overview
+
+### System Components (2026)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ALBANY VASCULAR PLATFORM                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   FRONTENDS                           BACKEND (PlaudAI @ 8001)           │
+│   ─────────                           ────────────────────────           │
+│                                                                          │
+│   ┌─────────────┐                    ┌────────────────────────┐         │
+│   │ PlaudAI Web │───────────────────▶│ /api/patients          │         │
+│   │ (Voice UI)  │                    │ /api/procedures        │         │
+│   └─────────────┘                    │ /api/parse             │         │
+│                                       │ /api/synopsis          │         │
+│   ┌─────────────┐                    ├────────────────────────┤         │
+│   │ ORCC        │───────────────────▶│ /api/tasks             │ NEW     │
+│   │ (Surgical)  │                    │ /api/shadow-coder/*    │ NEW     │
+│   └─────────────┘                    │ /ws (WebSocket)        │ NEW     │
+│                                       ├────────────────────────┤         │
+│   ┌─────────────┐                    │ /ingest/athena         │         │
+│   │ Athena      │───────────────────▶│ /ingest/clinical/{mrn} │         │
+│   │ Scraper     │                    └──────────┬─────────────┘         │
+│   └─────────────┘                               │                        │
+│                                                  ▼                        │
+│                                       ┌────────────────────────┐         │
+│                                       │  PostgreSQL (5432)     │         │
+│                                       │  surgical_command_     │         │
+│                                       │  center                │         │
+│                                       └────────────────────────┘         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Single-Server Architecture (Port 8001)
 
 This application uses a **single-server monolithic architecture**:
 
@@ -823,20 +895,76 @@ Production:  http://100.75.237.36:8001
 
 ### Endpoints Summary
 
+#### Core Endpoints
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/` | Service info and health |
 | GET | `/health` | Detailed health check |
 | POST | `/upload` | Upload transcript |
 | POST | `/batch-upload` | Batch upload |
-| GET | `/patients` | List/search patients |
-| GET | `/patients/{id}` | Get patient details |
-| GET | `/patients/{id}/emr-chart` | Get EMR chart data |
+
+#### ORCC Integration (Patients & Procedures)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/patients` | List/search patients |
+| GET | `/api/patients/{mrn}` | Get patient by MRN |
+| POST | `/api/patients` | Create patient |
+| GET | `/api/procedures` | List procedures |
+| GET | `/api/procedures/{id}` | Get procedure details |
+| POST | `/api/procedures` | Create procedure with planning data |
+| PATCH | `/api/procedures/{id}` | Update procedure |
+| GET | `/api/planning/{mrn}` | Get planning data for workspace |
+| GET | `/api/orcc/status` | ORCC integration status |
+
+#### Tasks API (NEW - 2026)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/tasks` | List tasks (with filters) |
+| POST | `/api/tasks` | Create task |
+| GET | `/api/tasks/{id}` | Get task by ID |
+| PATCH | `/api/tasks/{id}` | Update task |
+| DELETE | `/api/tasks/{id}` | Delete task |
+| POST | `/api/tasks/{id}/complete` | Mark task complete |
+| GET | `/api/tasks/patient/{mrn}` | Tasks by patient |
+| GET | `/api/tasks/procedure/{id}` | Tasks by procedure |
+| GET | `/api/tasks/stats/summary` | Task statistics |
+
+#### Shadow Coder API (NEW - Migrated from SCC)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/shadow-coder/status` | Service status |
+| POST | `/api/shadow-coder/intake/plaud` | Plaud transcript intake |
+| POST | `/api/shadow-coder/intake/zapier` | Zapier webhook |
+| GET | `/api/shadow-coder/intake/status/{id}` | Voice note status |
+| GET | `/api/shadow-coder/intake/recent` | Recent voice notes |
+| GET | `/api/shadow-coder/facts/{case_id}` | Get case facts |
+| POST | `/api/shadow-coder/facts/{case_id}` | Add fact to case |
+| GET | `/api/shadow-coder/facts/{case_id}/history` | Full fact history |
+| GET | `/api/shadow-coder/prompts/{case_id}` | Get active prompts |
+| POST | `/api/shadow-coder/prompts/{id}/action` | Execute prompt action |
+| POST | `/api/shadow-coder/analyze` | Analyze transcript (AI) |
+
+#### WebSocket (NEW - Real-time)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| WS | `/ws?client_id={id}` | Real-time connection |
+| GET | `/ws/stats` | Connection statistics |
+
+#### Athena EMR Integration
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | POST | `/ingest/athena` | Ingest Athena event |
 | GET | `/ingest/events/{mrn}` | Get patient events |
-| GET | `/ingest/clinical/{mrn}` | **NEW** Fetch all clinical data (bidirectional) |
+| GET | `/ingest/clinical/{mrn}` | Fetch all clinical data |
 | GET | `/ingest/stats` | Ingestion statistics |
 | GET | `/ingest/health` | Ingestion service health |
+
+#### AI Services
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/parse` | Parse transcript |
+| POST | `/api/synopsis` | Generate synopsis |
+| POST | `/api/extract` | Extract PVI fields |
 | POST | `/clinical/query` | Natural language query |
 
 ### Request/Response Examples
@@ -1025,6 +1153,8 @@ lsof -i :8001
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.1.0 | Jan 2026 | **Procedures API**: POST /api/procedures, GET /api/planning/{mrn}, vessel_data, ICD-10, CPT codes |
+| 3.0.0 | Jan 2026 | **SCC Migration**: Tasks API, Shadow Coder, WebSocket server, ORCC integration |
 | 2.1.0 | Jan 2026 | Bidirectional integration: GET /ingest/clinical/{mrn}, plaud-fetch telemetry |
 | 2.0.0 | Dec 2025 | Athena integration, auto-linking |
 | 1.5.0 | Dec 2025 | Patient search, rebranding |
@@ -1032,6 +1162,17 @@ lsof -i :8001
 
 ---
 
+## Related Documentation
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| SCC Migration Spec | `SCC_MIGRATION_SPEC.md` | Full migration plan from SCC |
+| SHARED_WORKSPACE | `.claude-team/SHARED_WORKSPACE.md` | Team coordination |
+| API Documentation | `/docs` (live endpoint) | Interactive Swagger docs |
+
+---
+
 **Organization:** Albany Vascular Specialist Center
 **Location:** 2300 Dawson Road, Suite 101, Albany, GA 31707
 **Contact:** (229) 436-8535
+**Server:** 100.75.237.36 (Tailscale) | Port 8001

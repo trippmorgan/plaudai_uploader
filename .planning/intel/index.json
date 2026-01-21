@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": 1768978689320,
+  "updated": 1769013755866,
   "files": {
     "/home/server1/plaudai_uploader/backend/main.py": {
       "exports": [
@@ -451,7 +451,7 @@
         "@modelcontextprotocol/sdk/types.js",
         "ws"
       ],
-      "indexed": 1768978689320
+      "indexed": 1769013755866
     }
   }
 }
