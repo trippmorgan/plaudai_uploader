@@ -22,6 +22,7 @@ FILTERS:
 =============================================================================
 """
 import os
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
@@ -360,7 +361,7 @@ async def update_procedure(
 
     if updates.barriers is not None:
         update_fields.append("barriers = CAST(:barriers AS jsonb)")
-        params["barriers"] = updates.barriers
+        params["barriers"] = json.dumps(updates.barriers) if isinstance(updates.barriers, list) else updates.barriers
 
     if updates.cardiology_clearance is not None:
         update_fields.append("cardiology_clearance = :cardiology_clearance")
@@ -419,6 +420,45 @@ async def update_procedure(
 
     # Return updated procedure
     return await get_procedure(procedure_id, db)
+
+
+@router.delete("/procedures/{procedure_id}", response_model=Dict[str, Any])
+async def delete_procedure(procedure_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a procedure by ID.
+
+    Use with caution - this permanently removes the procedure record.
+    Typically used to clean up duplicate procedures created during testing.
+    """
+    # First check if procedure exists
+    check_query = text("""
+        SELECT id::text, mrn, patient_name FROM procedures
+        WHERE id = CAST(:procedure_id AS uuid)
+    """)
+    result = db.execute(check_query, {"procedure_id": procedure_id})
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Procedure {procedure_id} not found")
+
+    # Delete the procedure
+    delete_query = text("""
+        DELETE FROM procedures
+        WHERE id = CAST(:procedure_id AS uuid)
+        RETURNING id::text
+    """)
+    db.execute(delete_query, {"procedure_id": procedure_id})
+    db.commit()
+
+    logger.info(f"Deleted procedure {procedure_id} for patient {row[2]} (MRN: {row[1]})")
+
+    return {
+        "success": True,
+        "deleted_id": procedure_id,
+        "mrn": row[1],
+        "patient_name": row[2],
+        "message": "Procedure deleted successfully"
+    }
 
 
 @router.post("/procedures", response_model=Dict[str, Any], status_code=201)

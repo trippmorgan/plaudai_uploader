@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": 1769013755866,
+  "updated": 1737849600000,
   "files": {
     "/home/server1/plaudai_uploader/backend/main.py": {
       "exports": [
@@ -14,7 +14,9 @@
         "health",
         "parse_transcript",
         "generate_synopsis",
-        "extract_pvi"
+        "extract_pvi",
+        "ws_endpoint",
+        "ws_stats"
       ],
       "imports": [
         "os",
@@ -24,9 +26,13 @@
         "fastapi",
         "pydantic",
         ".services.parser",
-        ".services.gemini_synopsis_stateless"
+        ".services.gemini_synopsis_stateless",
+        ".routes.orcc",
+        ".routes.shadow_coder",
+        ".routes.tasks",
+        ".websocket_server"
       ],
-      "indexed": 1737360330000
+      "indexed": 1737849600000
     },
     "/home/server1/plaudai_uploader/backend/config.py": {
       "exports": [
@@ -406,6 +412,51 @@
         ".db"
       ],
       "indexed": 1737360330000
+    },
+    "/home/server1/plaudai_uploader/backend/routes/__init__.py": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/routes/tasks.py": {
+      "exports": ["router", "TaskCreate", "TaskUpdate", "TaskResponse", "row_to_task", "get_db", "list_tasks", "create_task", "get_task", "update_task", "delete_task", "complete_task", "get_patient_tasks", "get_procedure_tasks", "get_task_stats"],
+      "imports": ["os", "logging", "datetime", "typing", "fastapi", "pydantic", "sqlalchemy"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/routes/orcc.py": {
+      "exports": ["router", "ProcedureBase", "ProcedureUpdate", "IndicationData", "AccessData", "VesselStatus", "InterventionData", "ProcedureCreate", "ProcedureResponse", "PatientBase", "PatientResponse", "get_db", "list_procedures", "get_procedure", "update_procedure", "create_procedure", "get_planning_data", "list_patients", "get_patient_by_mrn", "create_patient", "orcc_status"],
+      "imports": ["os", "json", "logging", "typing", "datetime", "uuid", "fastapi", "pydantic", "sqlalchemy"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/routes/shadow_coder.py": {
+      "exports": ["router", "PlaudIntakeRequest", "ZapierIntakeRequest", "AddFactRequest", "PromptActionRequest", "AnalyzeRequest", "get_db", "get_facts_service", "get_rules_engine", "generate_content_hash", "resolve_case_from_mrn", "intake_plaud", "intake_zapier", "get_intake_status", "get_recent_intakes", "get_case_facts", "add_case_fact", "get_fact_history", "get_case_prompts", "get_prompt_summary", "execute_prompt_action", "analyze_transcript", "shadow_coder_status"],
+      "imports": ["os", "hashlib", "logging", "datetime", "typing", "uuid", "fastapi", "pydantic", "sqlalchemy", "..services.shadow_coder"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/websocket_server.py": {
+      "exports": ["ConnectionManager", "manager", "websocket_endpoint", "handle_message", "notify_patient_update", "notify_task_created", "notify_fact_extracted", "notify_prompt_created"],
+      "imports": ["json", "logging", "datetime", "typing", "fastapi"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/services/shadow_coder/__init__.py": {
+      "exports": ["TranscriptExtractor", "FactsService", "RulesEngine"],
+      "imports": [".transcript_extractor", ".facts_service", ".rules_engine"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/services/shadow_coder/transcript_extractor.py": {
+      "exports": ["TranscriptExtractor"],
+      "imports": ["os", "json", "logging", "re", "typing", "anthropic"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/services/shadow_coder/facts_service.py": {
+      "exports": ["FactsService"],
+      "imports": ["logging", "typing", "datetime", "uuid", "sqlalchemy"],
+      "indexed": 1737849600000
+    },
+    "/home/server1/plaudai_uploader/backend/services/shadow_coder/rules_engine.py": {
+      "exports": ["PAD_RULES", "RulesEngine"],
+      "imports": ["logging", "typing", "datetime", "sqlalchemy", ".facts_service"],
+      "indexed": 1737849600000
     },
     "/home/server1/plaudai_uploader/backend/_legacy/routes/__init__.py": {
       "exports": [],

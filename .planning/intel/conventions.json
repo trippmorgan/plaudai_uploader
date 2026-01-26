@@ -1,16 +1,54 @@
 {
   "version": 1,
-  "updated": 1769013755867,
-  "naming": {},
-  "directories": {
-    "services": {
-      "purpose": "Service layer",
-      "files": 3
+  "updated": 1737849600000,
+  "naming": {
+    "exports": {
+      "dominant": "snake_case",
+      "count": 195,
+      "percentage": 75
     },
-    "routes": {
-      "purpose": "API endpoints",
-      "files": 2
+    "classes": {
+      "dominant": "PascalCase",
+      "count": 28,
+      "percentage": 100
     }
   },
-  "suffixes": {}
+  "directories": {
+    "backend": {
+      "purpose": "FastAPI application root",
+      "files": 6
+    },
+    "routes": {
+      "purpose": "API endpoints (FastAPI routers)",
+      "files": 4
+    },
+    "services": {
+      "purpose": "Business logic and AI integrations",
+      "files": 4
+    },
+    "services/shadow_coder": {
+      "purpose": "Clinical documentation coding compliance",
+      "files": 4
+    },
+    "_legacy": {
+      "purpose": "Database-backed version (pre-stateless refactor)",
+      "files": 12
+    }
+  },
+  "suffixes": {
+    "_stateless.py": {
+      "purpose": "Stateless service variants",
+      "count": 1
+    },
+    "_legacy.py": {
+      "purpose": "Legacy database-backed implementations",
+      "count": 1
+    }
+  },
+  "patterns": {
+    "framework": "FastAPI with Pydantic models",
+    "database": "PostgreSQL via SQLAlchemy (raw SQL)",
+    "ai_integrations": ["Google Gemini (synopsis generation)", "Anthropic Claude (fact extraction)"],
+    "architecture": "Stateless AI processing service for SCC integration"
+  }
 }

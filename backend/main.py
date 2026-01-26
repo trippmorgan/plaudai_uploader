@@ -60,6 +60,13 @@ MIGRATION FROM v1:
 =============================================================================
 """
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root (handles both direct and module execution)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
+
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -200,6 +207,8 @@ class SynopsisRequest(BaseModel):
 
 class SynopsisResponse(BaseModel):
     """Response from AI synopsis generation"""
+    model_config = {"protected_namespaces": ()}
+
     synopsis: str
     sections: Dict[str, str]
     model_used: str
