@@ -913,6 +913,7 @@ Production:  http://100.75.237.36:8001
 | GET | `/api/procedures/{id}` | Get procedure details |
 | POST | `/api/procedures` | Create procedure with planning data |
 | PATCH | `/api/procedures/{id}` | Update procedure |
+| DELETE | `/api/procedures/{id}` | Delete procedure (cleanup duplicates) |
 | GET | `/api/planning/{mrn}` | Get planning data for workspace |
 | GET | `/api/orcc/status` | ORCC integration status |
 
@@ -1153,6 +1154,7 @@ lsof -i :8001
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.2.0 | Jan 2026 | **Full Integration**: DELETE /api/procedures, saveOrUpdateProcedure(), Claude AI extraction, barriers PATCH fix |
 | 3.1.0 | Jan 2026 | **Procedures API**: POST /api/procedures, GET /api/planning/{mrn}, vessel_data, ICD-10, CPT codes |
 | 3.0.0 | Jan 2026 | **SCC Migration**: Tasks API, Shadow Coder, WebSocket server, ORCC integration |
 | 2.1.0 | Jan 2026 | Bidirectional integration: GET /ingest/clinical/{mrn}, plaud-fetch telemetry |
